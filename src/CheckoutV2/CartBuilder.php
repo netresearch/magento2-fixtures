@@ -3,16 +3,12 @@
 namespace TddWizard\Fixtures\CheckoutV2;
 
 use Magento\Catalog\Api\ProductRepositoryInterface;
-use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\ObjectManagerInterface;
 use Magento\Quote\Api\CartItemRepositoryInterface;
 use Magento\Quote\Api\CartManagementInterface;
 use Magento\Quote\Api\Data\CartInterface;
-use Magento\Quote\Api\Data\CartItemInterface;
 use Magento\Quote\Api\Data\CartItemInterfaceFactory;
-use Magento\Quote\Model\Quote\ProductOptionFactory;
 use Magento\TestFramework\Helper\Bootstrap;
-use TddWizard\Fixtures\Catalog\ProductBuilder;
 use TddWizard\Fixtures\Customer\AddressBuilder;
 use TddWizard\Fixtures\Customer\CustomerBuilder;
 
@@ -21,6 +17,8 @@ use TddWizard\Fixtures\Customer\CustomerBuilder;
  */
 class CartBuilder
 {
+    const CUSTOM_OPTIONS_KEY = 'custom_options';
+
     /**
      * @var CartManagementInterface
      */
@@ -37,9 +35,9 @@ class CartBuilder
     private $cartItemFactory;
 
     /**
-     * @var ProductOptionFactory
+     * @var ProductOptionBuilder
      */
-    private $productOptionFactory;
+    private $productOptionBuilder;
 
     /**
      * @var CartItemRepositoryInterface
@@ -56,19 +54,19 @@ class CartBuilder
      *
      * @var mixed[][]
      */
-    private $cartItems;
+    private $cartItems = [];
 
     public function __construct(
         CartManagementInterface $cartManagement,
         ProductRepositoryInterface $productRepository,
         CartItemInterfaceFactory $cartItemFactory,
-        ProductOptionFactory $productOptionFactory,
+        ProductOptionBuilder $productOptionBuilder,
         CartItemRepositoryInterface $cartItemRepository
     ) {
         $this->cartManagement = $cartManagement;
         $this->productRepository = $productRepository;
         $this->cartItemFactory = $cartItemFactory;
-        $this->productOptionFactory = $productOptionFactory;
+        $this->productOptionBuilder = $productOptionBuilder;
         $this->cartItemRepository = $cartItemRepository;
     }
 
@@ -78,11 +76,11 @@ class CartBuilder
             $objectManager = Bootstrap::getObjectManager();
         }
 
-        return new self(
+        return new static(
             $objectManager->create(CartManagementInterface::class),
             $objectManager->create(ProductRepositoryInterface::class),
             $objectManager->create(CartItemInterfaceFactory::class),
-            $objectManager->create(ProductOptionFactory::class),
+            $objectManager->create(ProductOptionBuilder::class),
             $objectManager->create(CartItemRepositoryInterface::class)
         );
     }
@@ -122,26 +120,36 @@ class CartBuilder
                 ->withAddresses(AddressBuilder::anAddress()->asDefaultBilling()->asDefaultShipping());
         }
 
-        if (empty($this->cartItems)) {
-            $this->cartItems = [
-                ['sku' => 'test', 'qty' => 1],
-            ];
-        }
-
-        $customer = $this->customerBuilder->build();
+        $customer = $builder->customerBuilder->build();
         $this->cartManagement->createEmptyCartForCustomer($customer->getId());
 
-        $cart = $this->cartManagement->getCartForCustomer($customer->getId());
+        $cart = $builder->cartManagement->getCartForCustomer($customer->getId());
 
-        foreach ($this->cartItems as $cartItemData) {
-            $cartItem = $this->cartItemFactory->create([
-                CartItemInterface::KEY_SKU => $cartItemData['sku'],
-                CartItemInterface::KEY_QTY => $cartItemData['qty'],
-                CartItemInterface::KEY_QUOTE_ID => $cart->getId(),
-                //todo(nr): ProductOptionInterface support (custom, downloadable, configurable)
-            ]);
+        //fixme(nr): import addresses during checkout, not in cart
+        foreach ($customer->getAddresses() as $address) {
+            if ($address->isDefaultBilling()) {
+                $cart->getBillingAddress()->importCustomerAddressData($address);
+            }
 
-            $this->cartItemRepository->save($cartItem);
+            if ($address->isDefaultShipping()) {
+                $cart->getShippingAddress()->importCustomerAddressData($address);
+            }
+        }
+
+        foreach ($builder->cartItems as $cartItemData) {
+            $cartItem = $builder->cartItemFactory->create();
+            $options = isset($cartItemData['product_options']) ? $cartItemData['product_options'] : [];
+            $customOptions = isset($options[self::CUSTOM_OPTIONS_KEY]) ? $cartItemData[self::CUSTOM_OPTIONS_KEY] : [];
+            foreach ($customOptions as $optionId => $optionValue) {
+                $builder->productOptionBuilder->addCustomOption((string) $optionId, (string) $optionValue);
+            }
+
+            $cartItem->setSku($cartItemData['sku']);
+            $cartItem->setQty($cartItemData['qty']);
+            $cartItem->setQuoteId($cart->getId());
+            $cartItem->setProductOption($builder->productOptionBuilder->build());
+
+            $builder->cartItemRepository->save($cartItem);
         }
 
         return $cart;

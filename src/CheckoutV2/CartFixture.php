@@ -16,7 +16,7 @@ class CartFixture
         $this->cart = $cart;
     }
 
-    public function getId() : int
+    public function getId(): int
     {
         return $this->cart->getId();
     }

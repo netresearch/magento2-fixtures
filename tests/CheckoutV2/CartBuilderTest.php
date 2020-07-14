@@ -11,6 +11,8 @@ use TddWizard\Fixtures\Catalog\ProductFixture;
 use TddWizard\Fixtures\Catalog\ProductFixtureRollback;
 use TddWizard\Fixtures\Customer\AddressBuilder;
 use TddWizard\Fixtures\Customer\CustomerBuilder;
+use TddWizard\Fixtures\Customer\CustomerFixture;
+use TddWizard\Fixtures\Customer\CustomerFixtureRollback;
 
 class CartBuilderTest extends TestCase
 {
@@ -23,6 +25,11 @@ class CartBuilderTest extends TestCase
      * @var ProductFixture[]
      */
     private $productFixtures;
+
+    /**
+     * @var CustomerFixture
+     */
+    private $customerFixture;
 
     /**
      * @var CartRepositoryInterface
@@ -49,13 +56,16 @@ class CartBuilderTest extends TestCase
     }
 
     /**
-     * Create a cart with a simple product and random address.
+     * Create a cart with given simple product and random address.
      *
      * @test
      */
     public function createCart()
     {
-        $this->cartFixture = new CartFixture(CartBuilder::aCart()->build());
+        $sku = 'test';
+        $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
+
+        $this->cartFixture = new CartFixture(CartBuilder::aCart()->withItem($sku)->build());
         $cart = $this->cartRepository->get($this->cartFixture->getId());
         $cartItems = $cart->getItems();
         self::assertNotEmpty($cartItems);
@@ -72,12 +82,15 @@ class CartBuilderTest extends TestCase
      */
     public function createCartWithAddress()
     {
+        $sku = 'test';
+        $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
+
         $customerBuilder = CustomerBuilder::aCustomer()
             ->withAddresses(
                 AddressBuilder::anAddress()
                     ->withFirstname($firstName = 'Wasch')
                     ->withLastname($lastName = 'Bär')
-                    ->withStreet($street = 'Trierer Str. 791')
+                    ->withStreet($street = ['Trierer Str. 791'])
                     ->withTelephone($phone = '555-666-777')
                     ->withCompany($company = 'integer_net')
                     ->withCountryId($country = 'DE')
@@ -88,7 +101,9 @@ class CartBuilderTest extends TestCase
                     ->asDefaultShipping()
             );
 
-        $this->cartFixture = new CartFixture(CartBuilder::aCart()->withCustomer($customerBuilder)->build());
+        $this->cartFixture = new CartFixture(
+            CartBuilder::aCart()->withCustomer($customerBuilder)->withItem($sku)->build()
+        );
         $billingAddress = $this->cartRepository->get($this->cartFixture->getId())->getBillingAddress();
         $shippingAddress = $this->addressManagement->get($this->cartFixture->getId());
 
@@ -98,11 +113,11 @@ class CartBuilderTest extends TestCase
         self::assertSame($phone, $billingAddress->getTelephone());
         self::assertSame($company, $billingAddress->getCompany());
         self::assertSame($country, $billingAddress->getCountryId());
-        self::assertSame($region, $billingAddress->getRegionId());
+        self::assertSame($region, (int) $billingAddress->getRegionId());
         self::assertSame($postalCode, $billingAddress->getPostcode());
         self::assertSame($city, $billingAddress->getCity());
 
-        self::assertTrue($shippingAddress->getSameAsBilling());
+        self::assertTrue((bool) $shippingAddress->getSameAsBilling());
     }
 
     /**
@@ -117,7 +132,7 @@ class CartBuilderTest extends TestCase
                 AddressBuilder::anAddress()
                     ->withFirstname($billingFirstName = 'Wasch')
                     ->withLastname($billingLastName = 'Bär')
-                    ->withStreet($billingStreet = 'Trierer Str. 791')
+                    ->withStreet($billingStreet = ['Trierer Str. 791'])
                     ->withTelephone($billingPhone = '555-666-777')
                     ->withCompany($billingCompany = 'integer_net')
                     ->withCountryId($billingCountry = 'DE')
@@ -128,7 +143,7 @@ class CartBuilderTest extends TestCase
                 AddressBuilder::anAddress()
                     ->withFirstname($shippingFirstName = 'Foo')
                     ->withLastname($shippingLastName = 'Bar')
-                    ->withStreet($shippingStreet = 'Bahnhofstr. 911')
+                    ->withStreet($shippingStreet = ['Bahnhofstr. 911'])
                     ->withTelephone($shippingPhone = '111-222-222')
                     ->withCompany($shippingCompany = 'NR')
                     ->withCountryId($shippingCountry = 'DE')
@@ -148,18 +163,18 @@ class CartBuilderTest extends TestCase
         self::assertSame($billingPhone, $billingAddress->getTelephone());
         self::assertSame($billingCompany, $billingAddress->getCompany());
         self::assertSame($billingCountry, $billingAddress->getCountryId());
-        self::assertSame($billingRegion, $billingAddress->getRegionId());
+        self::assertSame($billingRegion, (int) $billingAddress->getRegionId());
         self::assertSame($billingPostalCode, $billingAddress->getPostcode());
         self::assertSame($billingCity, $billingAddress->getCity());
 
-        self::assertFalse($shippingAddress->getSameAsBilling());
+        self::assertFalse((bool) $shippingAddress->getSameAsBilling());
         self::assertSame($shippingFirstName, $shippingAddress->getFirstname());
         self::assertSame($shippingLastName, $shippingAddress->getLastname());
         self::assertSame($shippingStreet, $shippingAddress->getStreet());
         self::assertSame($shippingPhone, $shippingAddress->getTelephone());
         self::assertSame($shippingCompany, $shippingAddress->getCompany());
         self::assertSame($shippingCountry, $shippingAddress->getCountryId());
-        self::assertSame($shippingRegion, $shippingAddress->getRegionId());
+        self::assertSame($shippingRegion, (int) $shippingAddress->getRegionId());
         self::assertSame($shippingPostalCode, $shippingAddress->getPostcode());
         self::assertSame($shippingCity, $shippingAddress->getCity());
     }
@@ -208,19 +223,47 @@ class CartBuilderTest extends TestCase
         ];
 
         $cart = CartBuilder::aCart();
+
         foreach ($cartItemData as $sku => $cartItem) {
             // create product in catalog
             $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
 
             // add item data to cart builder
-            $productOptions = empty($cartItem['options']) ? [] : ['custom_options' => $cartItem['options']];
-            $cart->withItem($sku, $cartItem['qty'], $productOptions);
+            $cart->withItem($sku, $cartItem['qty'], [CartBuilder::CUSTOM_OPTIONS_KEY => $cartItem['options']]);
         }
 
         $this->cartFixture = new CartFixture($cart->build());
         $cart = $this->cartRepository->get($this->cartFixture->getId());
         $cartItems = $cart->getItems();
+        foreach ($cartItems as $cartItem) {
+            // load custom options from created item if available
+            $customOptions = [];
+            $optionValues = [];
 
-        //todo(nr): assert that items have product options
+            if ($cartItem->getProductOption()
+                && $cartItem->getProductOption()->getExtensionAttributes()
+                && $cartItem->getProductOption()->getExtensionAttributes()->getCustomOptions()
+            ) {
+                $customOptions = $cartItem->getProductOption()->getExtensionAttributes()->getCustomOptions();
+            }
+
+            // compare built custom options with data that was initially passed into the builder
+            self::assertCount(count($cartItemData[$cartItem->getSku()]['options']), $customOptions);
+            foreach ($customOptions as $customOption) {
+                self::assertNotEmpty($cartItemData[$cartItem->getSku()]['options'][$customOption->getOptionId()]);
+                self::assertEquals(
+                    $cartItemData[$cartItem->getSku()]['options'][$customOption->getOptionId()],
+                    $customOption->getOptionValue()
+                );
+
+                $optionValues[] = $customOption->getOptionValue();
+            }
+
+            // also make sure that all custom options ended up in the buy request
+            $buyRequest = $cartItem->getOptionByCode('info_buyRequest')->getValue();
+            foreach ($optionValues as $optionValue) {
+                self::assertContains($optionValue, $buyRequest);
+            }
+        }
     }
 }
