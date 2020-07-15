@@ -51,34 +51,112 @@ class CartBuilderTest extends TestCase
     {
         CartFixtureRollback::create()->execute($this->cartFixture);
         ProductFixtureRollback::create()->execute(...$this->productFixtures);
+        CustomerFixtureRollback::create()->execute($this->customerFixture);
 
         parent::tearDown();
     }
 
     /**
-     * Create a cart with given simple product and random address.
+     * Create a cart with given simple product
      *
      * @test
+     * @throws \Exception
      */
     public function createCart()
     {
         $sku = 'test';
-        $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
 
-        $this->cartFixture = new CartFixture(CartBuilder::aCart()->withItem($sku)->build());
+        $this->customerFixture = new CustomerFixture(CustomerBuilder::aCustomer()->build());
+        $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
+        $this->cartFixture = new CartFixture(
+            CartBuilder::forCustomer($this->customerFixture)
+                ->withItem($sku)
+                ->build()
+        );
+
         $cart = $this->cartRepository->get($this->cartFixture->getId());
         $cartItems = $cart->getItems();
         self::assertNotEmpty($cartItems);
         self::assertCount(1, $cartItems);
         foreach ($cartItems as $cartItem) {
             self::assertSame(1, $cartItem->getQty());
+            self::assertSame($sku, $cartItem->getSku());
+        }
+    }
+
+    /**
+     * Create a cart with given simple products and quantities
+     *
+     * @test
+     * @throws \Exception
+     */
+    public function createCartWithItemQuantities()
+    {
+        $cartItemData = [
+            'foo' => ['qty' => 2],
+            'bar' => ['qty' => 3],
+        ];
+
+        $this->customerFixture = new CustomerFixture(CustomerBuilder::aCustomer()->build());
+        $cartBuilder = CartBuilder::forCustomer($this->customerFixture);
+
+        foreach ($cartItemData as $sku => $data) {
+            $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
+            $cartBuilder = $cartBuilder->withItem($sku, $data['qty']);
+        }
+
+        $this->cartFixture = new CartFixture($cartBuilder->build());
+
+        $cart = $this->cartRepository->get($this->cartFixture->getId());
+        $cartItems = $cart->getItems();
+        self::assertCount(count($cartItemData), $cartItems);
+        foreach ($cartItems as $cartItem) {
+            self::assertSame($cartItemData[$cartItem->getSku()]['qty'], $cartItem->getQty());
+        }
+    }
+
+    /**
+     * Create a cart with given product(s) and given product custom options
+     *
+     * @test
+     * @throws \Exception
+     */
+    public function createCartWithCustomOptions()
+    {
+        $cartItemData = [
+            'foo' => ['qty' => 2, 'options' => [42 => 'foobar', 303 => 'foxbaz']],
+            'bar' => ['qty' => 3, 'options' => []],
+        ];
+
+        $this->customerFixture = new CustomerFixture(CustomerBuilder::aCustomer()->build());
+        $cartBuilder = CartBuilder::forCustomer($this->customerFixture);
+
+        foreach ($cartItemData as $sku => $data) {
+            $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
+            $cartBuilder = $cartBuilder->withItem(
+                $sku,
+                $data['qty'],
+                [CartBuilder::CUSTOM_OPTIONS_KEY => $data['options']]
+            );
+        }
+
+        $this->cartFixture = new CartFixture($cartBuilder->build());
+
+        $cart = $this->cartRepository->get($this->cartFixture->getId());
+        $cartItems = $cart->getItems();
+        foreach ($cartItems as $cartItem) {
+            $buyRequest = $cartItem->getOptionByCode('info_buyRequest')->getValue();
+            foreach ($cartItemData[$cartItem->getSku()]['options'] as $optionId => $optionValue) {
+                self::assertContains((string) $optionId, $buyRequest);
+                self::assertContains((string) $optionValue, $buyRequest);
+            }
         }
     }
 
     /**
      * Create a cart with one simple product and given address.
      *
-     * @test
+     * @todo(nr): move to checkout test
      */
     public function createCartWithAddress()
     {
@@ -123,7 +201,7 @@ class CartBuilderTest extends TestCase
     /**
      * Create a cart with one simple product and different addresses for billing/shipping.
      *
-     * @test
+     * @todo(nr): move to checkout test
      */
     public function createCartWithAddresses()
     {
@@ -177,93 +255,5 @@ class CartBuilderTest extends TestCase
         self::assertSame($shippingRegion, (int) $shippingAddress->getRegionId());
         self::assertSame($shippingPostalCode, $shippingAddress->getPostcode());
         self::assertSame($shippingCity, $shippingAddress->getCity());
-    }
-
-    /**
-     * Create a cart with given product(s)
-     *
-     * @test
-     */
-    public function createCartWithProduct()
-    {
-        $cartItemData = [
-            'foo' => ['qty' => 2],
-            'bar' => ['qty' => 3],
-        ];
-
-        $cart = CartBuilder::aCart();
-        foreach ($cartItemData as $sku => $cartItem) {
-            // create product in catalog
-            $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
-
-            // add item data to cart builder
-            $cart->withItem($sku, $cartItem['qty']);
-        }
-
-        $this->cartFixture = new CartFixture($cart->build());
-        $cart = $this->cartRepository->get($this->cartFixture->getId());
-        $cartItems = $cart->getItems();
-        self::assertCount(count($cartItemData), $cartItems);
-        foreach ($cartItems as $cartItem) {
-            self::assertSame(1, $cartItem->getQty());
-            self::assertSame($cartItemData[$cartItem->getSku()]['qty'], $cartItem->getQty());
-        }
-    }
-
-    /**
-     * Create a cart with given product(s) and given product custom options
-     *
-     * @test
-     */
-    public function createCartWithProductOptions()
-    {
-        $cartItemData = [
-            'foo' => ['qty' => 2, 'options' => [42 => 'foobar', 303 => 'foxbaz']],
-            'bar' => ['qty' => 3, 'options' => []],
-        ];
-
-        $cart = CartBuilder::aCart();
-
-        foreach ($cartItemData as $sku => $cartItem) {
-            // create product in catalog
-            $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
-
-            // add item data to cart builder
-            $cart->withItem($sku, $cartItem['qty'], [CartBuilder::CUSTOM_OPTIONS_KEY => $cartItem['options']]);
-        }
-
-        $this->cartFixture = new CartFixture($cart->build());
-        $cart = $this->cartRepository->get($this->cartFixture->getId());
-        $cartItems = $cart->getItems();
-        foreach ($cartItems as $cartItem) {
-            // load custom options from created item if available
-            $customOptions = [];
-            $optionValues = [];
-
-            if ($cartItem->getProductOption()
-                && $cartItem->getProductOption()->getExtensionAttributes()
-                && $cartItem->getProductOption()->getExtensionAttributes()->getCustomOptions()
-            ) {
-                $customOptions = $cartItem->getProductOption()->getExtensionAttributes()->getCustomOptions();
-            }
-
-            // compare built custom options with data that was initially passed into the builder
-            self::assertCount(count($cartItemData[$cartItem->getSku()]['options']), $customOptions);
-            foreach ($customOptions as $customOption) {
-                self::assertNotEmpty($cartItemData[$cartItem->getSku()]['options'][$customOption->getOptionId()]);
-                self::assertEquals(
-                    $cartItemData[$cartItem->getSku()]['options'][$customOption->getOptionId()],
-                    $customOption->getOptionValue()
-                );
-
-                $optionValues[] = $customOption->getOptionValue();
-            }
-
-            // also make sure that all custom options ended up in the buy request
-            $buyRequest = $cartItem->getOptionByCode('info_buyRequest')->getValue();
-            foreach ($optionValues as $optionValue) {
-                self::assertContains($optionValue, $buyRequest);
-            }
-        }
     }
 }

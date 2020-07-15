@@ -2,15 +2,18 @@
 
 namespace TddWizard\Fixtures\CheckoutV2;
 
-use Magento\Catalog\Api\ProductRepositoryInterface;
+use Magento\Catalog\Api\Data\CustomOptionInterfaceFactory;
 use Magento\Framework\ObjectManagerInterface;
+use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\CartItemRepositoryInterface;
 use Magento\Quote\Api\CartManagementInterface;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Api\Data\CartItemInterfaceFactory;
+use Magento\Quote\Api\Data\ProductOptionExtensionInterfaceFactory;
+use Magento\Quote\Api\Data\ProductOptionInterface;
+use Magento\Quote\Api\Data\ProductOptionInterfaceFactory;
 use Magento\TestFramework\Helper\Bootstrap;
-use TddWizard\Fixtures\Customer\AddressBuilder;
-use TddWizard\Fixtures\Customer\CustomerBuilder;
+use TddWizard\Fixtures\Customer\CustomerFixture;
 
 /**
  * Builder to be used by fixtures
@@ -20,24 +23,14 @@ class CartBuilder
     const CUSTOM_OPTIONS_KEY = 'custom_options';
 
     /**
+     * @var CartRepositoryInterface
+     */
+    private $cartRepository;
+
+    /**
      * @var CartManagementInterface
      */
     private $cartManagement;
-
-    /**
-     * @var ProductRepositoryInterface
-     */
-    private $productRepository;
-
-    /**
-     * @var CartItemInterfaceFactory
-     */
-    private $cartItemFactory;
-
-    /**
-     * @var ProductOptionBuilder
-     */
-    private $productOptionBuilder;
 
     /**
      * @var CartItemRepositoryInterface
@@ -45,50 +38,112 @@ class CartBuilder
     private $cartItemRepository;
 
     /**
-     * @var CustomerBuilder
+     * @var CartItemInterfaceFactory
      */
-    private $customerBuilder;
+    private $cartItemFactory;
 
     /**
-     * Cart items data array. Compare REST API payload.
-     *
+     * @var ProductOptionInterfaceFactory
+     */
+    private $productOptionFactory;
+
+    /**
+     * @var ProductOptionExtensionInterfaceFactory
+     */
+    private $productOptionExtensionFactory;
+
+    /**
+     * @var CustomOptionInterfaceFactory
+     */
+    private $customOptionFactory;
+
+    /**
+     * @var CustomerFixture
+     */
+    private $customer;
+
+    /**
      * @var mixed[][]
      */
     private $cartItems = [];
 
+    /**
+     * @var string
+     */
+    private $reservedOrderId;
+
     public function __construct(
+        CartRepositoryInterface $cartRepository,
         CartManagementInterface $cartManagement,
-        ProductRepositoryInterface $productRepository,
+        CartItemRepositoryInterface $cartItemRepository,
         CartItemInterfaceFactory $cartItemFactory,
-        ProductOptionBuilder $productOptionBuilder,
-        CartItemRepositoryInterface $cartItemRepository
+        ProductOptionInterfaceFactory $productOptionFactory,
+        ProductOptionExtensionInterfaceFactory $productOptionExtensionFactory,
+        CustomOptionInterfaceFactory $customOptionFactory,
+        CustomerFixture $customer
     ) {
+        $this->cartRepository = $cartRepository;
         $this->cartManagement = $cartManagement;
-        $this->productRepository = $productRepository;
-        $this->cartItemFactory = $cartItemFactory;
-        $this->productOptionBuilder = $productOptionBuilder;
         $this->cartItemRepository = $cartItemRepository;
+        $this->cartItemFactory = $cartItemFactory;
+        $this->productOptionFactory = $productOptionFactory;
+        $this->productOptionExtensionFactory = $productOptionExtensionFactory;
+        $this->customOptionFactory = $customOptionFactory;
+        $this->customer = $customer;
     }
 
-    public static function aCart(ObjectManagerInterface $objectManager = null): CartBuilder
-    {
+    public static function forCustomer(
+        CustomerFixture $customer,
+        ObjectManagerInterface $objectManager = null
+    ): CartBuilder {
         if ($objectManager === null) {
             $objectManager = Bootstrap::getObjectManager();
         }
 
         return new static(
+            $objectManager->create(CartRepositoryInterface::class),
             $objectManager->create(CartManagementInterface::class),
-            $objectManager->create(ProductRepositoryInterface::class),
+            $objectManager->create(CartItemRepositoryInterface::class),
             $objectManager->create(CartItemInterfaceFactory::class),
-            $objectManager->create(ProductOptionBuilder::class),
-            $objectManager->create(CartItemRepositoryInterface::class)
+            $objectManager->create(ProductOptionInterfaceFactory::class),
+            $objectManager->create(ProductOptionExtensionInterfaceFactory::class),
+            $objectManager->create(CustomOptionInterfaceFactory::class),
+            $customer
         );
     }
 
-    public function withCustomer(CustomerBuilder $customerBuilder): CartBuilder
+    private function buildProductOption(array $options): ProductOptionInterface
+    {
+        $productOption = $this->productOptionFactory->create();
+        if (empty($options)) {
+            return $productOption;
+        }
+
+        if (empty($options[self::CUSTOM_OPTIONS_KEY]) || !is_array($options[self::CUSTOM_OPTIONS_KEY])) {
+            // currently only custom options are supported. no bundle, configurable, downloadable, etc.
+            return $productOption;
+        }
+
+        $productOptionExtension = $this->productOptionExtensionFactory->create();
+
+        $customOptions = [];
+        foreach ($options[self::CUSTOM_OPTIONS_KEY] as $optionId => $optionValue) {
+            $customOption = $this->customOptionFactory->create();
+            $customOption->setOptionId((string) $optionId);
+            $customOption->setOptionValue((string) $optionValue);
+            $customOptions[] = $customOption;
+        }
+
+        $productOptionExtension->setCustomOptions($customOptions);
+        $productOption->setExtensionAttributes($productOptionExtension);
+
+        return $productOption;
+    }
+
+    public function withReservedOrderId(string $orderIncrementId): CartBuilder
     {
         $builder = clone $this;
-        $builder->customerBuilder = $customerBuilder;
+        $builder->reservedOrderId = $orderIncrementId;
 
         return $builder;
     }
@@ -114,42 +169,26 @@ class CartBuilder
     {
         $builder = clone $this;
 
-        if (empty($builder->customerBuilder)) {
-            // init customer
-            $builder->customerBuilder = CustomerBuilder::aCustomer()
-                ->withAddresses(AddressBuilder::anAddress()->asDefaultBilling()->asDefaultShipping());
-        }
-
-        $customer = $builder->customerBuilder->build();
-        $this->cartManagement->createEmptyCartForCustomer($customer->getId());
-
-        $cart = $builder->cartManagement->getCartForCustomer($customer->getId());
-
-        //fixme(nr): import addresses during checkout, not in cart
-        foreach ($customer->getAddresses() as $address) {
-            if ($address->isDefaultBilling()) {
-                $cart->getBillingAddress()->importCustomerAddressData($address);
-            }
-
-            if ($address->isDefaultShipping()) {
-                $cart->getShippingAddress()->importCustomerAddressData($address);
-            }
-        }
+        $this->cartManagement->createEmptyCartForCustomer($builder->customer->getId());
+        $cart = $builder->cartManagement->getCartForCustomer($builder->customer->getId());
 
         foreach ($builder->cartItems as $cartItemData) {
             $cartItem = $builder->cartItemFactory->create();
-            $options = isset($cartItemData['product_options']) ? $cartItemData['product_options'] : [];
-            $customOptions = isset($options[self::CUSTOM_OPTIONS_KEY]) ? $cartItemData[self::CUSTOM_OPTIONS_KEY] : [];
-            foreach ($customOptions as $optionId => $optionValue) {
-                $builder->productOptionBuilder->addCustomOption((string) $optionId, (string) $optionValue);
-            }
+            $productOption = $this->buildProductOption($cartItemData['product_options']);
 
+            $cartItem->setQuoteId($cart->getId());
             $cartItem->setSku($cartItemData['sku']);
             $cartItem->setQty($cartItemData['qty']);
-            $cartItem->setQuoteId($cart->getId());
-            $cartItem->setProductOption($builder->productOptionBuilder->build());
+            $cartItem->setProductOption($productOption);
 
             $builder->cartItemRepository->save($cartItem);
+        }
+        if ($builder->reservedOrderId) {
+            $cart->setReservedOrderId($builder->reservedOrderId);
+
+            // force items reload before save, otherwise they have no item ID
+            $cart->setItems([]);
+            $this->cartRepository->save($cart);
         }
 
         return $cart;
