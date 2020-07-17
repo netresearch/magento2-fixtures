@@ -154,51 +154,6 @@ class CartBuilderTest extends TestCase
     }
 
     /**
-     * Create a cart with one simple product and given address.
-     *
-     * @todo(nr): move to checkout test
-     */
-    public function createCartWithAddress()
-    {
-        $sku = 'test';
-        $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
-
-        $customerBuilder = CustomerBuilder::aCustomer()
-            ->withAddresses(
-                AddressBuilder::anAddress()
-                    ->withFirstname($firstName = 'Wasch')
-                    ->withLastname($lastName = 'Bär')
-                    ->withStreet($street = ['Trierer Str. 791'])
-                    ->withTelephone($phone = '555-666-777')
-                    ->withCompany($company = 'integer_net')
-                    ->withCountryId($country = 'DE')
-                    ->withRegionId($region = 88)
-                    ->withPostcode($postalCode = '52078')
-                    ->withCity($city = 'Aachen')
-                    ->asDefaultBilling()
-                    ->asDefaultShipping()
-            );
-
-        $this->cartFixture = new CartFixture(
-            CartBuilder::aCart()->withCustomer($customerBuilder)->withItem($sku)->build()
-        );
-        $billingAddress = $this->cartRepository->get($this->cartFixture->getId())->getBillingAddress();
-        $shippingAddress = $this->addressManagement->get($this->cartFixture->getId());
-
-        self::assertSame($firstName, $billingAddress->getFirstname());
-        self::assertSame($lastName, $billingAddress->getLastname());
-        self::assertSame($street, $billingAddress->getStreet());
-        self::assertSame($phone, $billingAddress->getTelephone());
-        self::assertSame($company, $billingAddress->getCompany());
-        self::assertSame($country, $billingAddress->getCountryId());
-        self::assertSame($region, (int) $billingAddress->getRegionId());
-        self::assertSame($postalCode, $billingAddress->getPostcode());
-        self::assertSame($city, $billingAddress->getCity());
-
-        self::assertTrue((bool) $shippingAddress->getSameAsBilling());
-    }
-
-    /**
      * Create a cart with one simple product and different addresses for billing/shipping.
      *
      * @todo(nr): move to checkout test

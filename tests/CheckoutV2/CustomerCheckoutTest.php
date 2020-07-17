@@ -41,6 +41,12 @@ class CustomerCheckoutTest extends TestCase
     }
 
     /**
+     * Test checkout with reserved order id.
+     *
+     * - Assert that reserved order id ends up as order increment id.
+     * - Assert that all cart items are added to the order.
+     * - Assert that qty ordered matches qty in cart.
+     *
      * @test
      * @magentoConfigFixture default_store payment/fake/active 0
      * @magentoConfigFixture default_store payment/fake_vault/active 0
@@ -49,8 +55,11 @@ class CustomerCheckoutTest extends TestCase
      */
     public function checkoutWithReservedOrderId()
     {
-        $cartItemSku = 'test';
-        $orderIncrementId = '123456789';
+        $reservedOrderId = '123456789';
+        $cartItems = [
+            'foo' => ['qty' => 2],
+            'bar' => ['qty' => 3],
+        ];
 
         $this->customerFixture = new CustomerFixture(
             CustomerBuilder::aCustomer()
@@ -58,10 +67,65 @@ class CustomerCheckoutTest extends TestCase
                 ->build()
         );
 
+        $cartBuilder = CartBuilder::forCustomer($this->customerFixture)->withReservedOrderId($reservedOrderId);
+
+        foreach ($cartItems as $sku => $cartItemData) {
+            $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
+            $cartBuilder = $cartBuilder->withItem($sku, $cartItemData['sku']);
+        }
+
+        $cart = $cartBuilder->build();
+        $this->cartFixture = new CartFixture($cart);
+
+        $checkout = CustomerCheckout::withCart($cart);
+        $order = $checkout->placeOrder();
+
+        self::assertSame($reservedOrderId, $order->getIncrementId());
+
+        $orderItems = $order->getItems();
+        self::assertNotEmpty($orderItems);
+        self::assertCount(count($cartItems), $orderItems);
+        foreach ($orderItems as $orderItem) {
+            self::assertEquals($cartItems[$orderItem->getSku()]['qty'], $orderItem->getQtyOrdered());
+        }
+    }
+
+    /**
+     * Test checkout with explicitly given address data.
+     *
+     * - Assert that order address equals customer address
+     * - Assert that billing and shipping address are the same.
+     *
+     * @test
+     * @magentoConfigFixture default_store payment/fake/active 0
+     * @magentoConfigFixture default_store payment/fake_vault/active 0
+     *
+     * @throws \Exception
+     */
+    public function checkoutWithAddress()
+    {
+        $cartItemSku = 'test';
+
+        $customerBuilder = CustomerBuilder::aCustomer()
+            ->withAddresses(
+                AddressBuilder::anAddress()
+                    ->withFirstname($firstName = 'Wasch')
+                    ->withLastname($lastName = 'Bär')
+                    ->withStreet($street = ['Trierer Str. 791'])
+                    ->withTelephone($phone = '555-666-777')
+                    ->withCompany($company = 'integer_net')
+                    ->withCountryId($country = 'DE')
+                    ->withRegionId($region = 88)
+                    ->withPostcode($postalCode = '52078')
+                    ->withCity($city = 'Aachen')
+                    ->asDefaultBilling()
+                    ->asDefaultShipping()
+            );
+
+        $this->customerFixture = new CustomerFixture($customerBuilder->build());
         $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($cartItemSku)->build());
 
         $cart = CartBuilder::forCustomer($this->customerFixture)
-            ->withReservedOrderId($orderIncrementId)
             ->withItem($cartItemSku)
             ->build();
         $this->cartFixture = new CartFixture($cart);
@@ -69,14 +133,27 @@ class CustomerCheckoutTest extends TestCase
         $checkout = CustomerCheckout::withCart($cart);
         $order = $checkout->placeOrder();
 
-        self::assertSame($orderIncrementId, $order->getIncrementId());
+        $billingAddress = $order->getBillingAddress();
+        $shippingAddress = $order->getShippingAddress();
 
-        $orderItems = $order->getItems();
-        self::assertNotEmpty($orderItems);
-        self::assertCount(1, $orderItems);
-        foreach ($orderItems as $orderItem) {
-            self::assertEquals(1, $orderItem->getQtyOrdered());
-            self::assertSame($cartItemSku, $orderItem->getSku());
-        }
+        self::assertSame($firstName, $billingAddress->getFirstname());
+        self::assertSame($lastName, $billingAddress->getLastname());
+        self::assertSame($street, $billingAddress->getStreet());
+        self::assertSame($phone, $billingAddress->getTelephone());
+        self::assertSame($company, $billingAddress->getCompany());
+        self::assertSame($country, $billingAddress->getCountryId());
+        self::assertSame($region, (int) $billingAddress->getRegionId());
+        self::assertSame($postalCode, $billingAddress->getPostcode());
+        self::assertSame($city, $billingAddress->getCity());
+
+        self::assertSame($firstName, $shippingAddress->getFirstname());
+        self::assertSame($lastName, $shippingAddress->getLastname());
+        self::assertSame($street, $shippingAddress->getStreet());
+        self::assertSame($phone, $shippingAddress->getTelephone());
+        self::assertSame($company, $shippingAddress->getCompany());
+        self::assertSame($country, $shippingAddress->getCountryId());
+        self::assertSame($region, (int) $shippingAddress->getRegionId());
+        self::assertSame($postalCode, $shippingAddress->getPostcode());
+        self::assertSame($city, $shippingAddress->getCity());
     }
 }
