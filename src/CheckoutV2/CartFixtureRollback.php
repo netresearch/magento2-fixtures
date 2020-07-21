@@ -3,42 +3,32 @@
 namespace TddWizard\Fixtures\CheckoutV2;
 
 use Magento\Framework\ObjectManagerInterface;
-use Magento\Framework\Registry;
 use Magento\Quote\Api\CartRepositoryInterface;
+use Magento\TestFramework\Helper\Bootstrap;
 
 class CartFixtureRollback
 {
-    private $registry;
-
     private $cartRepository;
 
-    public function __construct(Registry $registry, CartRepositoryInterface $cartRepository)
+    public function __construct(CartRepositoryInterface $cartRepository)
     {
-        $this->registry = $registry;
         $this->cartRepository = $cartRepository;
     }
 
     public static function create(ObjectManagerInterface $objectManager = null)
     {
         if ($objectManager === null) {
-            $objectManager = \Magento\TestFramework\Helper\Bootstrap::getObjectManager();
+            $objectManager = Bootstrap::getObjectManager();
         }
 
-        return new self(
-            $objectManager->get(Registry::class),
-            $objectManager->get(CartRepositoryInterface::class)
-        );
+        return new self($objectManager->get(CartRepositoryInterface::class));
     }
 
-    public function execute(CartFixture $cartFixture)
+    public function execute(CartFixture ...$cartFixtures)
     {
-//        $this->registry->unregister('isSecureArea');
-//        $this->registry->register('isSecureArea', true);
-
-        $cart = $this->cartRepository->get($cartFixture->getId());
-
-        $this->cartRepository->delete($cart);
-
-//        $this->registry->unregister('isSecureArea');
+        foreach ($cartFixtures as $cartFixture) {
+            $cart = $this->cartRepository->get($cartFixture->getId());
+            $this->cartRepository->delete($cart);
+        }
     }
 }

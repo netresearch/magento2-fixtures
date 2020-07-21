@@ -9,11 +9,13 @@ use PHPUnit\Framework\TestCase;
 use TddWizard\Fixtures\Catalog\ProductBuilder;
 use TddWizard\Fixtures\Catalog\ProductFixture;
 use TddWizard\Fixtures\Catalog\ProductFixtureRollback;
-use TddWizard\Fixtures\Customer\AddressBuilder;
 use TddWizard\Fixtures\Customer\CustomerBuilder;
 use TddWizard\Fixtures\Customer\CustomerFixture;
 use TddWizard\Fixtures\Customer\CustomerFixtureRollback;
 
+/**
+ * @magentoDbIsolation enabled
+ */
 class CartBuilderTest extends TestCase
 {
     /**
@@ -69,7 +71,7 @@ class CartBuilderTest extends TestCase
         $this->customerFixture = new CustomerFixture(CustomerBuilder::aCustomer()->build());
         $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
         $this->cartFixture = new CartFixture(
-            CartBuilder::forCustomer($this->customerFixture)
+            CartBuilder::forCustomer($this->customerFixture->getId())
                 ->withItem($sku)
                 ->build()
         );
@@ -98,7 +100,7 @@ class CartBuilderTest extends TestCase
         ];
 
         $this->customerFixture = new CustomerFixture(CustomerBuilder::aCustomer()->build());
-        $cartBuilder = CartBuilder::forCustomer($this->customerFixture);
+        $cartBuilder = CartBuilder::forCustomer($this->customerFixture->getId());
 
         foreach ($cartItemData as $sku => $data) {
             $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
@@ -129,7 +131,7 @@ class CartBuilderTest extends TestCase
         ];
 
         $this->customerFixture = new CustomerFixture(CustomerBuilder::aCustomer()->build());
-        $cartBuilder = CartBuilder::forCustomer($this->customerFixture);
+        $cartBuilder = CartBuilder::forCustomer($this->customerFixture->getId());
 
         foreach ($cartItemData as $sku => $data) {
             $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
@@ -151,64 +153,5 @@ class CartBuilderTest extends TestCase
                 self::assertContains((string) $optionValue, $buyRequest);
             }
         }
-    }
-
-    /**
-     * Create a cart with one simple product and different addresses for billing/shipping.
-     *
-     * @todo(nr): move to checkout test
-     */
-    public function createCartWithAddresses()
-    {
-        $customerBuilder = CustomerBuilder::aCustomer()
-            ->withAddresses(
-                AddressBuilder::anAddress()
-                    ->withFirstname($billingFirstName = 'Wasch')
-                    ->withLastname($billingLastName = 'Bär')
-                    ->withStreet($billingStreet = ['Trierer Str. 791'])
-                    ->withTelephone($billingPhone = '555-666-777')
-                    ->withCompany($billingCompany = 'integer_net')
-                    ->withCountryId($billingCountry = 'DE')
-                    ->withRegionId($billingRegion = 88)
-                    ->withPostcode($billingPostalCode = '52078')
-                    ->withCity($billingCity = 'Aachen')
-                    ->asDefaultBilling(),
-                AddressBuilder::anAddress()
-                    ->withFirstname($shippingFirstName = 'Foo')
-                    ->withLastname($shippingLastName = 'Bar')
-                    ->withStreet($shippingStreet = ['Bahnhofstr. 911'])
-                    ->withTelephone($shippingPhone = '111-222-222')
-                    ->withCompany($shippingCompany = 'NR')
-                    ->withCountryId($shippingCountry = 'DE')
-                    ->withRegionId($shippingRegion = 91)
-                    ->withPostcode($shippingPostalCode = '04103')
-                    ->withCity($shippingCity = 'Leipzig')
-                    ->asDefaultShipping()
-            );
-
-        $this->cartFixture = new CartFixture(CartBuilder::aCart()->withCustomer($customerBuilder)->build());
-        $billingAddress = $this->cartRepository->get($this->cartFixture->getId())->getBillingAddress();
-        $shippingAddress = $this->addressManagement->get($this->cartFixture->getId());
-
-        self::assertSame($billingFirstName, $billingAddress->getFirstname());
-        self::assertSame($billingLastName, $billingAddress->getLastname());
-        self::assertSame($billingStreet, $billingAddress->getStreet());
-        self::assertSame($billingPhone, $billingAddress->getTelephone());
-        self::assertSame($billingCompany, $billingAddress->getCompany());
-        self::assertSame($billingCountry, $billingAddress->getCountryId());
-        self::assertSame($billingRegion, (int) $billingAddress->getRegionId());
-        self::assertSame($billingPostalCode, $billingAddress->getPostcode());
-        self::assertSame($billingCity, $billingAddress->getCity());
-
-        self::assertFalse((bool) $shippingAddress->getSameAsBilling());
-        self::assertSame($shippingFirstName, $shippingAddress->getFirstname());
-        self::assertSame($shippingLastName, $shippingAddress->getLastname());
-        self::assertSame($shippingStreet, $shippingAddress->getStreet());
-        self::assertSame($shippingPhone, $shippingAddress->getTelephone());
-        self::assertSame($shippingCompany, $shippingAddress->getCompany());
-        self::assertSame($shippingCountry, $shippingAddress->getCountryId());
-        self::assertSame($shippingRegion, (int) $shippingAddress->getRegionId());
-        self::assertSame($shippingPostalCode, $shippingAddress->getPostcode());
-        self::assertSame($shippingCity, $shippingAddress->getCity());
     }
 }

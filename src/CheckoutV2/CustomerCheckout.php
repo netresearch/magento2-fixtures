@@ -2,7 +2,6 @@
 
 namespace TddWizard\Fixtures\CheckoutV2;
 
-use Magento\Checkout\Api\Data\PaymentDetailsInterface;
 use Magento\Checkout\Api\Data\ShippingInformationInterfaceFactory;
 use Magento\Checkout\Api\PaymentInformationManagementInterface;
 use Magento\Checkout\Api\ShippingInformationManagementInterface;
@@ -16,8 +15,8 @@ use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Api\Data\PaymentInterfaceFactory;
 use Magento\Quote\Api\PaymentMethodManagementInterface;
 use Magento\Quote\Api\ShippingMethodManagementInterface;
-use Magento\Quote\Model\ShippingAddressManagementInterface;
 use Magento\Quote\Model\ResourceModel\Quote\Address\Rate\CollectionFactory;
+use Magento\Quote\Model\ShippingAddressManagementInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\TestFramework\Helper\Bootstrap;

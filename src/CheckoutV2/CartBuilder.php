@@ -4,16 +4,15 @@ namespace TddWizard\Fixtures\CheckoutV2;
 
 use Magento\Catalog\Api\Data\CustomOptionInterfaceFactory;
 use Magento\Framework\ObjectManagerInterface;
-use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\CartItemRepositoryInterface;
 use Magento\Quote\Api\CartManagementInterface;
+use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Api\Data\CartItemInterfaceFactory;
 use Magento\Quote\Api\Data\ProductOptionExtensionInterfaceFactory;
 use Magento\Quote\Api\Data\ProductOptionInterface;
 use Magento\Quote\Api\Data\ProductOptionInterfaceFactory;
 use Magento\TestFramework\Helper\Bootstrap;
-use TddWizard\Fixtures\Customer\CustomerFixture;
 
 /**
  * Builder to be used by fixtures
@@ -58,9 +57,9 @@ class CartBuilder
     private $customOptionFactory;
 
     /**
-     * @var CustomerFixture
+     * @var int
      */
-    private $customer;
+    private $customerId;
 
     /**
      * @var mixed[][]
@@ -80,7 +79,7 @@ class CartBuilder
         ProductOptionInterfaceFactory $productOptionFactory,
         ProductOptionExtensionInterfaceFactory $productOptionExtensionFactory,
         CustomOptionInterfaceFactory $customOptionFactory,
-        CustomerFixture $customer
+        int $customerId
     ) {
         $this->cartRepository = $cartRepository;
         $this->cartManagement = $cartManagement;
@@ -89,11 +88,11 @@ class CartBuilder
         $this->productOptionFactory = $productOptionFactory;
         $this->productOptionExtensionFactory = $productOptionExtensionFactory;
         $this->customOptionFactory = $customOptionFactory;
-        $this->customer = $customer;
+        $this->customerId = $customerId;
     }
 
     public static function forCustomer(
-        CustomerFixture $customer,
+        int $customerId,
         ObjectManagerInterface $objectManager = null
     ): CartBuilder {
         if ($objectManager === null) {
@@ -108,7 +107,7 @@ class CartBuilder
             $objectManager->create(ProductOptionInterfaceFactory::class),
             $objectManager->create(ProductOptionExtensionInterfaceFactory::class),
             $objectManager->create(CustomOptionInterfaceFactory::class),
-            $customer
+            $customerId
         );
     }
 
@@ -167,13 +166,15 @@ class CartBuilder
      */
     public function build(): CartInterface
     {
-        $builder = clone $this;
+        $this->cartManagement->createEmptyCartForCustomer($this->customerId);
+        $cart = $this->cartManagement->getCartForCustomer($this->customerId);
 
-        $this->cartManagement->createEmptyCartForCustomer($builder->customer->getId());
-        $cart = $builder->cartManagement->getCartForCustomer($builder->customer->getId());
+        if (empty($this->cartItems)) {
+            throw new \Exception('No items set, cannot create empty cart.');
+        }
 
-        foreach ($builder->cartItems as $cartItemData) {
-            $cartItem = $builder->cartItemFactory->create();
+        foreach ($this->cartItems as $cartItemData) {
+            $cartItem = $this->cartItemFactory->create();
             $productOption = $this->buildProductOption($cartItemData['product_options']);
 
             $cartItem->setQuoteId($cart->getId());
@@ -181,10 +182,11 @@ class CartBuilder
             $cartItem->setQty($cartItemData['qty']);
             $cartItem->setProductOption($productOption);
 
-            $builder->cartItemRepository->save($cartItem);
+            $this->cartItemRepository->save($cartItem);
         }
-        if ($builder->reservedOrderId) {
-            $cart->setReservedOrderId($builder->reservedOrderId);
+
+        if ($this->reservedOrderId) {
+            $cart->setReservedOrderId($this->reservedOrderId);
 
             // force items reload before save, otherwise they have no item ID
             $cart->setItems([]);
