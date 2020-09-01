@@ -3,15 +3,12 @@
 namespace TddWizard\Fixtures\CheckoutV2;
 
 use Magento\Quote\Api\CartRepositoryInterface;
-use Magento\Quote\Model\ShippingAddressManagementInterface;
 use Magento\TestFramework\Helper\Bootstrap;
 use PHPUnit\Framework\TestCase;
 use TddWizard\Fixtures\Catalog\ProductBuilder;
-use TddWizard\Fixtures\Catalog\ProductFixture;
-use TddWizard\Fixtures\Catalog\ProductFixtureRollback;
+use TddWizard\Fixtures\Catalog\ProductFixturePool;
 use TddWizard\Fixtures\Customer\CustomerBuilder;
-use TddWizard\Fixtures\Customer\CustomerFixture;
-use TddWizard\Fixtures\Customer\CustomerFixtureRollback;
+use TddWizard\Fixtures\Customer\CustomerFixturePool;
 
 /**
  * @magentoDbIsolation enabled
@@ -19,41 +16,40 @@ use TddWizard\Fixtures\Customer\CustomerFixtureRollback;
 class CartBuilderTest extends TestCase
 {
     /**
-     * @var CartFixture
-     */
-    private $cartFixture;
-
-    /**
-     * @var ProductFixture[]
+     * @var ProductFixturePool
      */
     private $productFixtures;
 
     /**
-     * @var CustomerFixture
+     * @var CustomerFixturePool
      */
-    private $customerFixture;
+    private $customerFixtures;
+
+    /**
+     * @var CartFixturePool
+     */
+    private $cartFixtures;
 
     /**
      * @var CartRepositoryInterface
      */
     private $cartRepository;
 
-    /**
-     * @var ShippingAddressManagementInterface
-     */
-    private $addressManagement;
-
-    protected function setUp()
+    protected function setUp(): void
     {
+        parent::setUp();
         $this->cartRepository = Bootstrap::getObjectManager()->create(CartRepositoryInterface::class);
-        $this->addressManagement = Bootstrap::getObjectManager()->create(ShippingAddressManagementInterface::class);
+
+        $this->productFixtures = new ProductFixturePool();
+        $this->customerFixtures = new CustomerFixturePool();
+        $this->cartFixtures = new CartFixturePool();
     }
 
-    protected function tearDown()
+    protected function tearDown(): void
     {
-        CartFixtureRollback::create()->execute($this->cartFixture);
-        ProductFixtureRollback::create()->execute(...$this->productFixtures);
-        CustomerFixtureRollback::create()->execute($this->customerFixture);
+        $this->productFixtures->rollback();
+        $this->customerFixtures->rollback();
+        $this->cartFixtures->rollback();
 
         parent::tearDown();
     }
@@ -68,20 +64,21 @@ class CartBuilderTest extends TestCase
     {
         $sku = 'test';
 
-        $this->customerFixture = new CustomerFixture(CustomerBuilder::aCustomer()->build());
-        $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
-        $this->cartFixture = new CartFixture(
-            CartBuilder::forCustomer($this->customerFixture->getId())
-                ->withItem($sku)
-                ->build()
-        );
+        $customer = CustomerBuilder::aCustomer()->build();
+        $product = ProductBuilder::aSimpleProduct()->withSku($sku)->build();
+        $cart = CartBuilder::forCustomer($customer->getId())->withItem($sku)->build();
 
-        $cart = $this->cartRepository->get($this->cartFixture->getId());
+        $this->customerFixtures->add($customer);
+        $this->productFixtures->add($product);
+        $this->cartFixtures->add($cart);
+
+        // reload cart items
+        $cart = $this->cartRepository->get($cart->getId());
         $cartItems = $cart->getItems();
         self::assertNotEmpty($cartItems);
         self::assertCount(1, $cartItems);
         foreach ($cartItems as $cartItem) {
-            self::assertSame(1, $cartItem->getQty());
+            self::assertEquals(1, $cartItem->getQty());
             self::assertSame($sku, $cartItem->getSku());
         }
     }
@@ -95,25 +92,31 @@ class CartBuilderTest extends TestCase
     public function createCartWithItemQuantities()
     {
         $cartItemData = [
-            'foo' => ['qty' => 2],
-            'bar' => ['qty' => 3],
+            'a-foo' => ['qty' => 2],
+            'a-bar' => ['qty' => 3],
         ];
 
-        $this->customerFixture = new CustomerFixture(CustomerBuilder::aCustomer()->build());
-        $cartBuilder = CartBuilder::forCustomer($this->customerFixture->getId());
+        $customer = CustomerBuilder::aCustomer()->build();
+        $this->customerFixtures->add($customer);
+
+        $cartBuilder = CartBuilder::forCustomer($customer->getId());
 
         foreach ($cartItemData as $sku => $data) {
-            $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
+            $product = ProductBuilder::aSimpleProduct()->withSku($sku)->build();
+            $this->productFixtures->add($product);
+
             $cartBuilder = $cartBuilder->withItem($sku, $data['qty']);
         }
 
-        $this->cartFixture = new CartFixture($cartBuilder->build());
+        $cart = $cartBuilder->build();
+        $this->cartFixtures->add($cart);
 
-        $cart = $this->cartRepository->get($this->cartFixture->getId());
+        // reload cart items
+        $cart = $this->cartRepository->get($cart->getId());
         $cartItems = $cart->getItems();
         self::assertCount(count($cartItemData), $cartItems);
         foreach ($cartItems as $cartItem) {
-            self::assertSame($cartItemData[$cartItem->getSku()]['qty'], $cartItem->getQty());
+            self::assertEquals($cartItemData[$cartItem->getSku()]['qty'], $cartItem->getQty());
         }
     }
 
@@ -126,15 +129,19 @@ class CartBuilderTest extends TestCase
     public function createCartWithCustomOptions()
     {
         $cartItemData = [
-            'foo' => ['qty' => 2, 'options' => [42 => 'foobar', 303 => 'foxbaz']],
-            'bar' => ['qty' => 3, 'options' => []],
+            'x-foo' => ['qty' => 2, 'options' => [42 => 'foobar', 303 => 'foxbaz']],
+            'x-bar' => ['qty' => 3, 'options' => []],
         ];
 
-        $this->customerFixture = new CustomerFixture(CustomerBuilder::aCustomer()->build());
-        $cartBuilder = CartBuilder::forCustomer($this->customerFixture->getId());
+        $customer = CustomerBuilder::aCustomer()->build();
+        $this->customerFixtures->add($customer);
+
+        $cartBuilder = CartBuilder::forCustomer($customer->getId());
 
         foreach ($cartItemData as $sku => $data) {
-            $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
+            $product = ProductBuilder::aSimpleProduct()->withSku($sku)->build();
+            $this->productFixtures->add($product);
+
             $cartBuilder = $cartBuilder->withItem(
                 $sku,
                 $data['qty'],
@@ -142,15 +149,17 @@ class CartBuilderTest extends TestCase
             );
         }
 
-        $this->cartFixture = new CartFixture($cartBuilder->build());
+        $cart = $cartBuilder->build();
+        $this->cartFixtures->add($cart);
 
-        $cart = $this->cartRepository->get($this->cartFixture->getId());
+        // reload cart items
+        $cart = $this->cartRepository->get($cart->getId());
         $cartItems = $cart->getItems();
         foreach ($cartItems as $cartItem) {
             $buyRequest = $cartItem->getOptionByCode('info_buyRequest')->getValue();
             foreach ($cartItemData[$cartItem->getSku()]['options'] as $optionId => $optionValue) {
-                self::assertContains((string) $optionId, $buyRequest);
-                self::assertContains((string) $optionValue, $buyRequest);
+                self::assertNotFalse(strpos($buyRequest, (string) $optionId));
+                self::assertNotFalse(strpos($buyRequest, (string) $optionValue));
             }
         }
     }

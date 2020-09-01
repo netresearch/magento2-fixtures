@@ -3,16 +3,17 @@ declare(strict_types=1);
 
 namespace TddWizard\Fixtures\Sales;
 
+use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Model\Order;
 
 class OrderFixture
 {
     /**
-     * @var Order
+     * @var OrderInterface|Order
      */
     private $order;
 
-    public function __construct(Order $order)
+    public function __construct(OrderInterface $order)
     {
         $this->order = $order;
     }

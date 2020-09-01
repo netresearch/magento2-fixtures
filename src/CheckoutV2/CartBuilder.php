@@ -3,7 +3,6 @@
 namespace TddWizard\Fixtures\CheckoutV2;
 
 use Magento\Catalog\Api\Data\CustomOptionInterfaceFactory;
-use Magento\Framework\ObjectManagerInterface;
 use Magento\Quote\Api\CartItemRepositoryInterface;
 use Magento\Quote\Api\CartManagementInterface;
 use Magento\Quote\Api\CartRepositoryInterface;
@@ -91,13 +90,9 @@ class CartBuilder
         $this->customerId = $customerId;
     }
 
-    public static function forCustomer(
-        int $customerId,
-        ObjectManagerInterface $objectManager = null
-    ): CartBuilder {
-        if ($objectManager === null) {
-            $objectManager = Bootstrap::getObjectManager();
-        }
+    public static function forCustomer(int $customerId): CartBuilder
+    {
+        $objectManager = Bootstrap::getObjectManager();
 
         return new static(
             $objectManager->create(CartRepositoryInterface::class),
@@ -147,7 +142,7 @@ class CartBuilder
         return $builder;
     }
 
-    public function withItem($sku, $qty = 1, $productOptions = []): CartBuilder
+    public function withItem(string $sku, int $qty = 1, array $productOptions = []): CartBuilder
     {
         $builder = clone $this;
 

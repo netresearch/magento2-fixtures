@@ -8,7 +8,6 @@ use Magento\Checkout\Api\ShippingInformationManagementInterface;
 use Magento\Customer\Api\Data\AddressInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\NoSuchEntityException;
-use Magento\Framework\ObjectManagerInterface;
 use Magento\Quote\Api\BillingAddressManagementInterface;
 use Magento\Quote\Api\CartManagementInterface;
 use Magento\Quote\Api\Data\CartInterface;
@@ -111,18 +110,9 @@ class CustomerCheckout
         $this->orderRepository = $orderRepository;
     }
 
-    /**
-     * Initialize checkout with cart.
-     *
-     * @param CartInterface $cart
-     * @param ObjectManagerInterface|null $objectManager
-     * @return CustomerCheckout
-     */
-    public static function withCart(CartInterface $cart, ObjectManagerInterface $objectManager = null): CustomerCheckout
+    public static function withCart(CartInterface $cart): CustomerCheckout
     {
-        if ($objectManager === null) {
-            $objectManager = Bootstrap::getObjectManager();
-        }
+        $objectManager = Bootstrap::getObjectManager();
 
         return new static(
             $cart,
@@ -148,7 +138,7 @@ class CustomerCheckout
      * - If not found, use any address.
      *
      * @param int|null $customerAddressId
-     * @param string $fallbackType Enum, "default_billing" or "default_shipping"
+     * @param string|null $fallbackType Enum, "default_billing" or "default_shipping"
      * @return AddressInterface
      * @throws NoSuchEntityException
      */
@@ -217,7 +207,7 @@ class CustomerCheckout
      *
      * If customer address ID is not given, then address book is used, preferably default billing address.
      *
-     * @param string $paymentMethod
+     * @param string|null $paymentMethod
      * @param int|null $customerAddressId
      * @throws LocalizedException
      */

@@ -3,18 +3,16 @@ declare(strict_types=1);
 
 namespace TddWizard\Fixtures\Sales;
 
-use Magento\Sales\Model\Order;
-use function array_values as values;
+use Magento\Sales\Api\Data\OrderInterface;
 
 class OrderFixturePool
 {
-
     /**
      * @var OrderFixture[]
      */
     private $orderFixtures = [];
 
-    public function add(Order $order, string $key = null): void
+    public function add(OrderInterface $order, string $key = null): void
     {
         if ($key === null) {
             $this->orderFixtures[] = new OrderFixture($order);
@@ -42,7 +40,7 @@ class OrderFixturePool
 
     public function rollback(): void
     {
-        OrderFixtureRollback::create()->execute(...values($this->orderFixtures));
+        OrderFixtureRollback::create()->execute(...$this->orderFixtures);
         $this->orderFixtures = [];
     }
 }

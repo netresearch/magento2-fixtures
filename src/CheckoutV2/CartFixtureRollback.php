@@ -2,7 +2,6 @@
 
 namespace TddWizard\Fixtures\CheckoutV2;
 
-use Magento\Framework\ObjectManagerInterface;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\TestFramework\Helper\Bootstrap;
 
@@ -15,13 +14,9 @@ class CartFixtureRollback
         $this->cartRepository = $cartRepository;
     }
 
-    public static function create(ObjectManagerInterface $objectManager = null)
+    public static function create()
     {
-        if ($objectManager === null) {
-            $objectManager = Bootstrap::getObjectManager();
-        }
-
-        return new self($objectManager->get(CartRepositoryInterface::class));
+        return new self(Bootstrap::getObjectManager()->get(CartRepositoryInterface::class));
     }
 
     public function execute(CartFixture ...$cartFixtures)

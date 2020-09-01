@@ -5,11 +5,11 @@ namespace TddWizard\Fixtures\CheckoutV2;
 use PHPUnit\Framework\TestCase;
 use TddWizard\Fixtures\Catalog\ProductBuilder;
 use TddWizard\Fixtures\Catalog\ProductFixture;
-use TddWizard\Fixtures\Catalog\ProductFixtureRollback;
+use TddWizard\Fixtures\Catalog\ProductFixturePool;
 use TddWizard\Fixtures\Customer\AddressBuilder;
 use TddWizard\Fixtures\Customer\CustomerBuilder;
-use TddWizard\Fixtures\Customer\CustomerFixture;
-use TddWizard\Fixtures\Customer\CustomerFixtureRollback;
+use TddWizard\Fixtures\Customer\CustomerFixturePool;
+use TddWizard\Fixtures\Sales\OrderFixturePool;
 
 /**
  * @magentoDbIsolation enabled
@@ -17,25 +17,41 @@ use TddWizard\Fixtures\Customer\CustomerFixtureRollback;
 class CustomerCheckoutTest extends TestCase
 {
     /**
-     * @var CartFixture[]
-     */
-    private $cartFixtures;
-
-    /**
-     * @var ProductFixture[]
+     * @var ProductFixturePool
      */
     private $productFixtures;
 
     /**
-     * @var CustomerFixture[]
+     * @var CustomerFixturePool
      */
     private $customerFixtures;
 
-    protected function tearDown()
+    /**
+     * @var CartFixturePool
+     */
+    private $cartFixtures;
+
+    /**
+     * @var OrderFixturePool
+     */
+    private $orderFixtures;
+
+    protected function setUp(): void
     {
-        CartFixtureRollback::create()->execute(...$this->cartFixtures);
-        ProductFixtureRollback::create()->execute(...$this->productFixtures);
-        CustomerFixtureRollback::create()->execute(...$this->customerFixtures);
+        parent::setUp();
+
+        $this->productFixtures = new ProductFixturePool();
+        $this->customerFixtures = new CustomerFixturePool();
+        $this->cartFixtures = new CartFixturePool();
+        $this->orderFixtures = new OrderFixturePool();
+    }
+
+    protected function tearDown(): void
+    {
+        $this->productFixtures->rollback();
+        $this->customerFixtures->rollback();
+        $this->cartFixtures->rollback();
+        $this->orderFixtures->rollback();
 
         parent::tearDown();
     }
@@ -62,25 +78,29 @@ class CustomerCheckoutTest extends TestCase
         ];
 
         // create customer
-        $customerFixture = new CustomerFixture(
-            CustomerBuilder::aCustomer()
-                ->withAddresses(AddressBuilder::anAddress()->asDefaultShipping()->asDefaultBilling())
-                ->build()
-        );
-        $this->customerFixtures[] = $customerFixture;
+        $customer = CustomerBuilder::aCustomer()
+            ->withAddresses(AddressBuilder::anAddress()->asDefaultShipping()->asDefaultBilling())
+            ->build();
+        $this->customerFixtures->add($customer);
+
+        // create products
+        foreach ($cartItems as $sku => $cartItemData) {
+            $product = ProductBuilder::aSimpleProduct()->withSku($sku)->build();
+            $this->productFixtures->add($product);
+        }
 
         // create cart
-        $cartBuilder = CartBuilder::forCustomer($customerFixture->getId())->withReservedOrderId($reservedOrderId);
+        $cartBuilder = CartBuilder::forCustomer($customer->getId())->withReservedOrderId($reservedOrderId);
         foreach ($cartItems as $sku => $cartItemData) {
-            $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($sku)->build());
             $cartBuilder = $cartBuilder->withItem($sku, $cartItemData['qty']);
         }
         $cart = $cartBuilder->build();
-        $this->cartFixtures[] = new CartFixture($cart);
+        $this->cartFixtures->add($cart);
 
         // check out and place order
         $checkout = CustomerCheckout::withCart($cart);
         $order = $checkout->placeOrder();
+        $this->orderFixtures->add($order);
 
         self::assertSame($reservedOrderId, $order->getIncrementId());
 
@@ -106,46 +126,48 @@ class CustomerCheckoutTest extends TestCase
      */
     public function checkoutWithAddress()
     {
-        $cartItemSku = 'test';
+        $cartItemSku = 'test-123';
 
         // create customer
-        $customerFixture = new CustomerFixture(
-            CustomerBuilder::aCustomer()
-                ->withAddresses(
-                    AddressBuilder::anAddress()
-                        ->withFirstname($firstName = 'Wasch')
-                        ->withLastname($lastName = 'Bär')
-                        ->withStreet($street = ['Trierer Str. 791'])
-                        ->withTelephone($phone = '555-666-777')
-                        ->withCompany($company = 'integer_net')
-                        ->withCountryId($country = 'DE')
-                        ->withRegionId($region = 88)
-                        ->withPostcode($postalCode = '52078')
-                        ->withCity($city = 'Aachen')
-                        ->asDefaultBilling()
-                        ->asDefaultShipping()
-                )
-                ->build()
-        );
-        $this->customerFixtures[] = $customerFixture;
+        $customer = CustomerBuilder::aCustomer()
+            ->withAddresses(
+                AddressBuilder::anAddress()
+                    ->withFirstname($firstName = 'Wasch')
+                    ->withLastname($lastName = 'Bär')
+                    ->withStreet($street = 'Trierer Str. 791')
+                    ->withTelephone($phone = '555-666-777')
+                    ->withCompany($company = 'integer_net')
+                    ->withCountryId($country = 'DE')
+                    ->withRegionId($region = 88)
+                    ->withPostcode($postalCode = '52078')
+                    ->withCity($city = 'Aachen')
+                    ->asDefaultBilling()
+                    ->asDefaultShipping()
+            )
+            ->build();
+
+        $this->customerFixtures->add($customer);
+
+        // create product
+        $product = ProductBuilder::aSimpleProduct()->withSku($cartItemSku)->build();
+        $this->productFixtures->add($product);
 
         // create cart
-        $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($cartItemSku)->build());
-
-        $cartBuilder = CartBuilder::forCustomer($customerFixture->getId())->withItem($cartItemSku);
+        $cartBuilder = CartBuilder::forCustomer($customer->getId())->withItem($cartItemSku);
         $cart = $cartBuilder->build();
-        $this->cartFixtures[] = new CartFixture($cart);
+        $this->cartFixtures->add($cart);
 
         // check out and place order
         $checkout = CustomerCheckout::withCart($cart);
         $order = $checkout->placeOrder();
+        $this->orderFixtures->add($order);
 
         $billingAddress = $order->getBillingAddress();
         $shippingAddress = $order->getShippingAddress();
 
         self::assertSame($firstName, $billingAddress->getFirstname());
         self::assertSame($lastName, $billingAddress->getLastname());
-        self::assertSame($street, $billingAddress->getStreet());
+        self::assertSame($street, implode(PHP_EOL, $billingAddress->getStreet()));
         self::assertSame($phone, $billingAddress->getTelephone());
         self::assertSame($company, $billingAddress->getCompany());
         self::assertSame($country, $billingAddress->getCountryId());
@@ -155,7 +177,7 @@ class CustomerCheckoutTest extends TestCase
 
         self::assertSame($firstName, $shippingAddress->getFirstname());
         self::assertSame($lastName, $shippingAddress->getLastname());
-        self::assertSame($street, $shippingAddress->getStreet());
+        self::assertSame($street, implode(PHP_EOL, $shippingAddress->getStreet()));
         self::assertSame($phone, $shippingAddress->getTelephone());
         self::assertSame($company, $shippingAddress->getCompany());
         self::assertSame($country, $shippingAddress->getCountryId());
@@ -178,56 +200,58 @@ class CustomerCheckoutTest extends TestCase
      */
     public function checkoutWithAddresses()
     {
-        $cartItemSku = 'test';
+        $cartItemSku = 'test-234';
 
         // create customer
-        $customerFixture = new CustomerFixture(
-            CustomerBuilder::aCustomer()
-                ->withAddresses(
-                    AddressBuilder::anAddress()
-                        ->withFirstname($billingFirstName = 'Wasch')
-                        ->withLastname($billingLastName = 'Bär')
-                        ->withStreet($billingStreet = ['Trierer Str. 791'])
-                        ->withTelephone($billingPhone = '555-666-777')
-                        ->withCompany($billingCompany = 'integer_net')
-                        ->withCountryId($billingCountry = 'DE')
-                        ->withRegionId($billingRegion = 88)
-                        ->withPostcode($billingPostalCode = '52078')
-                        ->withCity($billingCity = 'Aachen')
-                        ->asDefaultBilling(),
-                    AddressBuilder::anAddress()
-                        ->withFirstname($shippingFirstName = 'Foo')
-                        ->withLastname($shippingLastName = 'Bar')
-                        ->withStreet($shippingStreet = ['Bahnhofstr. 911'])
-                        ->withTelephone($shippingPhone = '111-222-222')
-                        ->withCompany($shippingCompany = 'NR')
-                        ->withCountryId($shippingCountry = 'DE')
-                        ->withRegionId($shippingRegion = 91)
-                        ->withPostcode($shippingPostalCode = '04103')
-                        ->withCity($shippingCity = 'Leipzig')
-                        ->asDefaultShipping()
-                )
-                ->build()
-        );
-        $this->customerFixtures[] = $customerFixture;
+        $customer = CustomerBuilder::aCustomer()
+            ->withAddresses(
+                AddressBuilder::anAddress()
+                    ->withFirstname($billingFirstName = 'Wasch')
+                    ->withLastname($billingLastName = 'Bär')
+                    ->withStreet($billingStreet = 'Trierer Str. 791')
+                    ->withTelephone($billingPhone = '555-666-777')
+                    ->withCompany($billingCompany = 'integer_net')
+                    ->withCountryId($billingCountry = 'DE')
+                    ->withRegionId($billingRegion = 88)
+                    ->withPostcode($billingPostalCode = '52078')
+                    ->withCity($billingCity = 'Aachen')
+                    ->asDefaultBilling(),
+                AddressBuilder::anAddress()
+                    ->withFirstname($shippingFirstName = 'Foo')
+                    ->withLastname($shippingLastName = 'Bar')
+                    ->withStreet($shippingStreet = 'Bahnhofstr. 911')
+                    ->withTelephone($shippingPhone = '111-222-222')
+                    ->withCompany($shippingCompany = 'NR')
+                    ->withCountryId($shippingCountry = 'DE')
+                    ->withRegionId($shippingRegion = 91)
+                    ->withPostcode($shippingPostalCode = '04103')
+                    ->withCity($shippingCity = 'Leipzig')
+                    ->asDefaultShipping()
+            )
+            ->build();
+
+        $this->customerFixtures->add($customer);
+
+        // create product
+        $product = ProductBuilder::aSimpleProduct()->withSku($cartItemSku)->build();
+        $this->productFixtures->add($product);
 
         // create cart
-        $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($cartItemSku)->build());
-
-        $cartBuilder = CartBuilder::forCustomer($customerFixture->getId())->withItem($cartItemSku);
+        $cartBuilder = CartBuilder::forCustomer($customer->getId())->withItem($cartItemSku);
         $cart = $cartBuilder->build();
-        $this->cartFixtures[] = new CartFixture($cart);
+        $this->cartFixtures->add($cart);
 
         // check out and place order
         $checkout = CustomerCheckout::withCart($cart);
         $order = $checkout->placeOrder();
+        $this->orderFixtures->add($order);
 
         $billingAddress = $order->getBillingAddress();
         $shippingAddress = $order->getShippingAddress();
 
         self::assertSame($billingFirstName, $billingAddress->getFirstname());
         self::assertSame($billingLastName, $billingAddress->getLastname());
-        self::assertSame($billingStreet, $billingAddress->getStreet());
+        self::assertSame($billingStreet, implode(PHP_EOL, $billingAddress->getStreet()));
         self::assertSame($billingPhone, $billingAddress->getTelephone());
         self::assertSame($billingCompany, $billingAddress->getCompany());
         self::assertSame($billingCountry, $billingAddress->getCountryId());
@@ -237,7 +261,7 @@ class CustomerCheckoutTest extends TestCase
 
         self::assertSame($shippingFirstName, $shippingAddress->getFirstname());
         self::assertSame($shippingLastName, $shippingAddress->getLastname());
-        self::assertSame($shippingStreet, $shippingAddress->getStreet());
+        self::assertSame($shippingStreet, implode(PHP_EOL, $shippingAddress->getStreet()));
         self::assertSame($shippingPhone, $shippingAddress->getTelephone());
         self::assertSame($shippingCompany, $shippingAddress->getCompany());
         self::assertSame($shippingCountry, $shippingAddress->getCountryId());
@@ -257,60 +281,59 @@ class CustomerCheckoutTest extends TestCase
      */
     public function subsequentCheckouts()
     {
-        $fooSku = 'test';
-        $barSku = 'fake';
+        $fooSku = 'test-345';
+        $barSku = 'test-456';
 
-        // create foo customer
-        $fooCustomerFixture = new CustomerFixture(
-            CustomerBuilder::aCustomer()->withAddresses(
-                AddressBuilder::anAddress()->withLastname($fooBillingLastName = 'Foo')->asDefaultBilling(),
-                AddressBuilder::anAddress()->withLastname($fooShippingLastName = 'Fox')->asDefaultShipping()
-            )->build()
-        );
-        $this->customerFixtures[] = $fooCustomerFixture;
+        // create customers
+        $fooCustomer = CustomerBuilder::aCustomer()->withAddresses(
+            AddressBuilder::anAddress()->withLastname($fooBillingLastName = 'Foo')->asDefaultBilling(),
+            AddressBuilder::anAddress()->withLastname($fooShippingLastName = 'Fox')->asDefaultShipping()
+        )->build();
+        $barCustomer = CustomerBuilder::aCustomer()->withAddresses(
+            AddressBuilder::anAddress()->withLastname($barBillingLastName = 'Bar')->asDefaultBilling(),
+            AddressBuilder::anAddress()->withLastname($barShippingLastName = 'Baz')->asDefaultShipping()
+        )->build();
+
+        $this->customerFixtures->add($fooCustomer);
+        $this->customerFixtures->add($barCustomer);
+
+        // create products
+        $fooProduct = ProductBuilder::aSimpleProduct()->withSku($fooSku)->build();
+        $barProduct = ProductBuilder::aSimpleProduct()->withSku($barSku)->build();
+
+        $this->productFixtures->add($fooProduct);
+        $this->productFixtures->add($barProduct);
 
         // create foo cart
-        $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($fooSku)->build());
-
-        $cartBuilder = CartBuilder::forCustomer($fooCustomerFixture->getId())
+        $fooCart = CartBuilder::forCustomer($fooCustomer->getId())
             ->withReservedOrderId($fooOrderIncrementId = '1001')
-            ->withItem($fooSku);
-        $cart = $cartBuilder->build();
-        $this->cartFixtures[] = new CartFixture($cart);
+            ->withItem($fooSku)
+            ->build();
+        $this->cartFixtures->add($fooCart);
 
         // check out and place foo order
-        $checkout = CustomerCheckout::withCart($cart);
+        $checkout = CustomerCheckout::withCart($fooCart);
         $fooOrder = $checkout->placeOrder();
+        $this->orderFixtures->add($fooOrder);
 
+        // create bar cart
+        $barCart = CartBuilder::forCustomer($barCustomer->getId())
+            ->withReservedOrderId($barOrderIncrementId = '2002')
+            ->withItem($barSku)
+            ->build();
+        $this->cartFixtures->add($barCart);
+
+        // check out and place bar order
+        $checkout = CustomerCheckout::withCart($barCart);
+        $barOrder = $checkout->placeOrder();
+        $this->orderFixtures->add($barOrder);
+
+        self::assertSame($fooOrderIncrementId, $fooOrder->getIncrementId());
         self::assertSame($fooBillingLastName, $fooOrder->getBillingAddress()->getLastname());
         self::assertSame($fooShippingLastName, $fooOrder->getShippingAddress()->getLastname());
 
-        // create bar customer
-        $barCustomerFixture = new CustomerFixture(
-            CustomerBuilder::aCustomer()->withAddresses(
-                AddressBuilder::anAddress()->withLastname($barBillingLastName = 'Bar')->asDefaultBilling(),
-                AddressBuilder::anAddress()->withLastname($barShippingLastName = 'Baz')->asDefaultShipping()
-            )->build()
-        );
-        $this->customerFixtures[] = $barCustomerFixture;
-
-        // create bar cart
-        $this->productFixtures[] = new ProductFixture(ProductBuilder::aSimpleProduct()->withSku($barSku)->build());
-
-        $cartBuilder = CartBuilder::forCustomer($barCustomerFixture->getId())
-            ->withReservedOrderId($barOrderIncrementId = '2002')
-            ->withItem($barSku);
-        $cart = $cartBuilder->build();
-        $this->cartFixtures[] = new CartFixture($cart);
-
-        // check out and place bar order
-        $checkout = CustomerCheckout::withCart($cart);
-        $barOrder = $checkout->placeOrder();
-
-        self::assertSame($fooOrderIncrementId, $fooOrder->getIncrementId());
-        self::assertSame($barBillingLastName, $barOrder->getBillingAddress()->getLastname());
-
         self::assertSame($barOrderIncrementId, $barOrder->getIncrementId());
+        self::assertSame($barBillingLastName, $barOrder->getBillingAddress()->getLastname());
         self::assertSame($barShippingLastName, $barOrder->getShippingAddress()->getLastname());
     }
 }
