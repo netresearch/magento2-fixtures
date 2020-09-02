@@ -10,6 +10,7 @@ use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Quote\Api\BillingAddressManagementInterface;
 use Magento\Quote\Api\CartManagementInterface;
+use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Api\Data\PaymentInterfaceFactory;
 use Magento\Quote\Api\PaymentMethodManagementInterface;
@@ -78,6 +79,11 @@ class CustomerCheckout
     private $paymentFactory;
 
     /**
+     * @var CartRepositoryInterface
+     */
+    private $cartRepository;
+
+    /**
      * @var OrderRepositoryInterface
      */
     private $orderRepository;
@@ -94,6 +100,7 @@ class CustomerCheckout
         CollectionFactory $rateCollectionFactory,
         ShippingInformationInterfaceFactory $shippingFactory,
         PaymentInterfaceFactory $paymentFactory,
+        CartRepositoryInterface $cartRepository,
         OrderRepositoryInterface $orderRepository
     ) {
         $this->cart = $cart;
@@ -107,6 +114,7 @@ class CustomerCheckout
         $this->rateCollectionFactory = $rateCollectionFactory;
         $this->shippingFactory = $shippingFactory;
         $this->paymentFactory = $paymentFactory;
+        $this->cartRepository = $cartRepository;
         $this->orderRepository = $orderRepository;
     }
 
@@ -126,6 +134,7 @@ class CustomerCheckout
             $objectManager->create(CollectionFactory::class),
             $objectManager->create(ShippingInformationInterfaceFactory::class),
             $objectManager->create(PaymentInterfaceFactory::class),
+            $objectManager->create(CartRepositoryInterface::class),
             $objectManager->create(OrderRepositoryInterface::class)
         );
     }
@@ -178,9 +187,10 @@ class CustomerCheckout
      *
      * @param string|null $shippingMethod
      * @param int|null $customerAddressId
+     * @return CartInterface
      * @throws LocalizedException
      */
-    public function submitShipping(string $shippingMethod = null, int $customerAddressId = null)
+    public function submitShipping(string $shippingMethod = null, int $customerAddressId = null): CartInterface
     {
         $customerAddress = $this->getAddress($customerAddressId, AddressInterface::DEFAULT_SHIPPING);
         $shippingAddress = $this->cart->getShippingAddress()->importCustomerAddressData($customerAddress);
@@ -200,6 +210,9 @@ class CustomerCheckout
         $shippingInformation->setShippingAddress($shippingAddress);
 
         $this->shippingManagement->saveAddressInformation($this->cart->getId(), $shippingInformation);
+
+        // return reloaded quote with shipping information
+        return $this->cartRepository->get($this->cart->getId());
     }
 
     /**
@@ -209,9 +222,10 @@ class CustomerCheckout
      *
      * @param string|null $paymentMethod
      * @param int|null $customerAddressId
+     * @return CartInterface
      * @throws LocalizedException
      */
-    public function submitPayment(string $paymentMethod = null, int $customerAddressId = null)
+    public function submitPayment(string $paymentMethod = null, int $customerAddressId = null): CartInterface
     {
         $customerAddress = $this->getAddress($customerAddressId, AddressInterface::DEFAULT_BILLING);
         $billingAddress = $this->cart->getBillingAddress()->importCustomerAddressData($customerAddress);
@@ -226,13 +240,16 @@ class CustomerCheckout
         $payment->setMethod($paymentMethod);
 
         $this->paymentManagement->savePaymentInformation($this->cart->getId(), $payment, $billingAddress);
+
+        // return reloaded quote with payment information
+        return $this->cartRepository->get($this->cart->getId());
     }
 
     /**
      * @return OrderInterface
      * @throws LocalizedException
      */
-    public function placeOrder()
+    public function placeOrder(): OrderInterface
     {
         $shippingMethod = $this->cart->getShippingAddress()->getShippingMethod();
         if (empty($shippingMethod)) {
