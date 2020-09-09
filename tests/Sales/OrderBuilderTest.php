@@ -2,13 +2,12 @@
 
 namespace TddWizard\Fixtures\Sales;
 
-use Magento\Framework\Exception\LocalizedException;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\TestFramework\Helper\Bootstrap;
 use PHPUnit\Framework\TestCase;
 use TddWizard\Fixtures\Catalog\ProductBuilder;
-use TddWizard\Fixtures\Checkout\CartBuilder;
+use TddWizard\Fixtures\CheckoutV2\CartBuilder;
 use TddWizard\Fixtures\Customer\AddressBuilder;
 use TddWizard\Fixtures\Customer\CustomerBuilder;
 
@@ -19,7 +18,7 @@ use TddWizard\Fixtures\Customer\CustomerBuilder;
 class OrderBuilderTest extends TestCase
 {
     /**
-     * @var OrderFixture[]
+     * @var OrderFixturePool
      */
     private $orderFixtures;
 
@@ -32,15 +31,13 @@ class OrderBuilderTest extends TestCase
     {
         parent::setUp();
 
+        $this->orderFixtures = new OrderFixturePool();
         $this->orderRepository = Bootstrap::getObjectManager()->create(OrderRepositoryInterface::class);
     }
 
-    /**
-     * @throws LocalizedException
-     */
     protected function tearDown(): void
     {
-        OrderFixtureRollback::create()->execute(...$this->orderFixtures);
+        $this->orderFixtures->rollback();
 
         parent::tearDown();
     }
@@ -51,14 +48,16 @@ class OrderBuilderTest extends TestCase
      * Easy to set up, least flexible.
      *
      * @test
+     * @magentoConfigFixture default_store payment/fake/active 0
+     * @magentoConfigFixture default_store payment/fake_vault/active 0
      * @throws \Exception
      */
     public function createOrder()
     {
-        $orderFixture = new OrderFixture(
-            OrderBuilder::anOrder()->build()
-        );
-        $this->orderFixtures[] = $orderFixture;
+        $order = OrderBuilder::anOrder()->build();
+        $this->orderFixtures->add($order);
+
+        $orderFixture = $this->orderFixtures->get();
 
         self::assertInstanceOf(OrderInterface::class, $this->orderRepository->get($orderFixture->getId()));
         self::assertNotEmpty($orderFixture->getOrderItemQtys());
@@ -70,14 +69,16 @@ class OrderBuilderTest extends TestCase
      * Control the product included with the order, use random item quantities.
      *
      * @test
+     * @magentoConfigFixture default_store payment/fake/active 0
+     * @magentoConfigFixture default_store payment/fake_vault/active 0
      * @throws \Exception
      */
     public function createOrderWithProduct()
     {
-        $orderFixture = new OrderFixture(
-            OrderBuilder::anOrder()->withProducts(ProductBuilder::aSimpleProduct())->build()
-        );
-        $this->orderFixtures[] = $orderFixture;
+        $order = OrderBuilder::anOrder()->withProducts(ProductBuilder::aSimpleProduct())->build();
+        $this->orderFixtures->add($order);
+
+        $orderFixture = $this->orderFixtures->get();
 
         self::assertInstanceOf(OrderInterface::class, $this->orderRepository->get($orderFixture->getId()));
         self::assertCount(1, $orderFixture->getOrderItemQtys());
@@ -89,17 +90,19 @@ class OrderBuilderTest extends TestCase
      * Control the products included with the order, use random item quantities.
      *
      * @test
+     * @magentoConfigFixture default_store payment/fake/active 0
+     * @magentoConfigFixture default_store payment/fake_vault/active 0
      * @throws \Exception
      */
     public function createOrderWithProducts()
     {
-        $orderFixture = new OrderFixture(
-            OrderBuilder::anOrder()->withProducts(
-                ProductBuilder::aSimpleProduct()->withSku('foo'),
-                ProductBuilder::aSimpleProduct()->withSku('bar')
-            )->build()
-        );
-        $this->orderFixtures[] = $orderFixture;
+        $order = OrderBuilder::anOrder()->withProducts(
+            ProductBuilder::aSimpleProduct()->withSku('foo'),
+            ProductBuilder::aSimpleProduct()->withSku('bar')
+        )->build();
+        $this->orderFixtures->add($order);
+
+        $orderFixture = $this->orderFixtures->get();
 
         self::assertInstanceOf(OrderInterface::class, $this->orderRepository->get($orderFixture->getId()));
         self::assertCount(2, $orderFixture->getOrderItemQtys());
@@ -111,6 +114,8 @@ class OrderBuilderTest extends TestCase
      * Control the customer placing the order.
      *
      * @test
+     * @magentoConfigFixture default_store payment/fake/active 0
+     * @magentoConfigFixture default_store payment/fake_vault/active 0
      * @throws \Exception
      */
     public function createOrderWithCustomer()
@@ -120,10 +125,10 @@ class OrderBuilderTest extends TestCase
             ->withEmail($customerEmail)
             ->withAddresses(AddressBuilder::anAddress()->asDefaultBilling()->asDefaultShipping());
 
-        $orderFixture = new OrderFixture(
-            OrderBuilder::anOrder()->withCustomer($customerBuilder)->build()
-        );
-        $this->orderFixtures[] = $orderFixture;
+        $order = OrderBuilder::anOrder()->withCustomer($customerBuilder)->build();
+        $this->orderFixtures->add($order);
+
+        $orderFixture = $this->orderFixtures->get();
 
         self::assertInstanceOf(OrderInterface::class, $this->orderRepository->get($orderFixture->getId()));
         self::assertSame($customerEmail, $orderFixture->getCustomerEmail());
@@ -139,7 +144,8 @@ class OrderBuilderTest extends TestCase
      * - set item quantities
      * - set payment and shipping method
      *
-     * @test
+     * @magentoConfigFixture default_store payment/fake/active 0
+     * @magentoConfigFixture default_store payment/fake_vault/active 0
      * @throws \Exception
      */
     public function createOrderWithCart()
@@ -159,20 +165,20 @@ class OrderBuilderTest extends TestCase
             ->withEmail($customerEmail)
             ->withAddresses(AddressBuilder::anAddress()->asDefaultBilling()->asDefaultShipping());
 
-        $cartBuilder = CartBuilder::forCurrentSession();
+        $cartBuilder = CartBuilder::forCustomer();
         foreach ($cartItems as $sku => $qty) {
-            $cartBuilder = $cartBuilder->withSimpleProduct($sku, $qty);
+            $cartBuilder = $cartBuilder->withItem($sku, $qty);
         }
 
-        $orderFixture = new OrderFixture(
-            OrderBuilder::anOrder()
-                ->withProducts(...$productBuilders)
-                ->withCustomer($customerBuilder)
-                ->withCart($cartBuilder)
-                ->withPaymentMethod($paymentMethod)->withShippingMethod($shippingMethod)
-                ->build()
-        );
-        $this->orderFixtures[] = $orderFixture;
+        $order = OrderBuilder::anOrder()
+            ->withProducts(...$productBuilders)
+            ->withCustomer($customerBuilder)
+            ->withCart($cartBuilder)
+            ->withPaymentMethod($paymentMethod)->withShippingMethod($shippingMethod)
+            ->build();
+        $this->orderFixtures->add($order);
+
+        $orderFixture = $this->orderFixtures->get();
 
         self::assertInstanceOf(OrderInterface::class, $this->orderRepository->get($orderFixture->getId()));
         self::assertSame($customerEmail, $orderFixture->getCustomerEmail());
@@ -185,6 +191,8 @@ class OrderBuilderTest extends TestCase
      * Create multiple orders. Assert all of them were successfully built.
      *
      * @test
+     * @magentoConfigFixture default_store payment/fake/active 0
+     * @magentoConfigFixture default_store payment/fake_vault/active 0
      * @throws \Exception
      */
     public function createMultipleOrders()
@@ -192,47 +200,39 @@ class OrderBuilderTest extends TestCase
         $shippingMethod = 'flatrate_flatrate';
 
         // first order, simple
-        $orderFixture = new OrderFixture(
-            OrderBuilder::anOrder()
-                ->withShippingMethod($shippingMethod)
-                ->build()
-        );
-        $this->orderFixtures[] = $orderFixture;
+        $simpleOrder = OrderBuilder::anOrder()
+            ->withShippingMethod($shippingMethod)
+            ->build();
 
         // second order, with specified cart
-        $cartBuilder = CartBuilder::forCurrentSession();
-        $orderWithCartFixture = new OrderFixture(
-            OrderBuilder::anOrder()
-                ->withShippingMethod($shippingMethod)
-                ->withProducts(ProductBuilder::aSimpleProduct()->withSku('bar'))
-                ->withCart($cartBuilder->withSimpleProduct('bar', 3))
-                ->build()
-        );
-        $this->orderFixtures[] = $orderWithCartFixture;
+        $cartBuilder = CartBuilder::forCustomer();
+        $orderWithCart = OrderBuilder::anOrder()
+            ->withShippingMethod($shippingMethod)
+            ->withProducts(ProductBuilder::aSimpleProduct()->withSku('bar'))
+            ->withCart($cartBuilder->withItem('bar', 3))
+            ->build();
+
+        $this->orderFixtures->add($simpleOrder);
+        $this->orderFixtures->add($orderWithCart, 'with_cart');
 
         // third order, with specified customer
-        $orderWithCustomerFixture = new OrderFixture(
-            OrderBuilder::anOrder()
-                ->withShippingMethod($shippingMethod)
-                ->withCustomer(
-                    CustomerBuilder::aCustomer()
-                        ->withAddresses(
-                            AddressBuilder::anAddress('de_AT')
-                                ->asDefaultBilling()
-                                ->asDefaultShipping()
-                        )
-                )
-                ->build()
-        );
-        $this->orderFixtures[] = $orderWithCustomerFixture;
+        $orderWithCustomer = OrderBuilder::anOrder()
+            ->withShippingMethod($shippingMethod)
+            ->withCustomer(
+                CustomerBuilder::aCustomer()
+                    ->withAddresses(
+                        AddressBuilder::anAddress('de_AT')
+                            ->asDefaultBilling()
+                            ->asDefaultShipping()
+                    )
+            )
+            ->build();
+        $this->orderFixtures->add($orderWithCustomer);
 
-        // assert all fixtures were created with separate customers.
-        self::assertCount(3, $this->orderFixtures);
-        self::assertContainsOnlyInstancesOf(OrderFixture::class, $this->orderFixtures);
-
-        $customerIds[$orderFixture->getCustomerId()] = 1;
-        $customerIds[$orderWithCartFixture->getCustomerId()] = 1;
-        $customerIds[$orderWithCustomerFixture->getCustomerId()] = 1;
+        // assert all orders were created with separate customers.
+        $customerIds[$this->orderFixtures->get('simple')->getCustomerId()] = 1;
+        $customerIds[$this->orderFixtures->get('with_cart')->getCustomerId()] = 1;
+        $customerIds[$this->orderFixtures->get('with_customer')->getCustomerId()] = 1;
         self::assertCount(3, $customerIds);
     }
 
@@ -240,6 +240,8 @@ class OrderBuilderTest extends TestCase
      * Create orders for faker addresses with either state or province. Assert both types have a `region_id` assigned.
      *
      * @test
+     * @magentoConfigFixture default_store payment/fake/active 0
+     * @magentoConfigFixture default_store payment/fake_vault/active 0
      * @throws \Exception
      */
     public function createIntlOrders()

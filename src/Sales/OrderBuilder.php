@@ -4,12 +4,12 @@ declare(strict_types=1);
 namespace TddWizard\Fixtures\Sales;
 
 use Magento\Sales\Api\Data\OrderInterface;
+use Magento\Sales\Model\Order;
 use TddWizard\Fixtures\Catalog\ProductBuilder;
-use TddWizard\Fixtures\Checkout\CartBuilder;
-use TddWizard\Fixtures\Checkout\CustomerCheckout;
+use TddWizard\Fixtures\CheckoutV2\CartBuilder;
+use TddWizard\Fixtures\CheckoutV2\CustomerCheckout;
 use TddWizard\Fixtures\Customer\AddressBuilder;
 use TddWizard\Fixtures\Customer\CustomerBuilder;
-use TddWizard\Fixtures\Customer\CustomerFixture;
 
 /**
  * Builder to be used by fixtures
@@ -91,7 +91,7 @@ class OrderBuilder
     }
 
     /**
-     * @return OrderInterface
+     * @return OrderInterface|Order
      * @throws \Exception
      */
     public function build(): OrderInterface
@@ -119,34 +119,27 @@ class OrderBuilder
                 ->withAddresses(AddressBuilder::anAddress()->asDefaultBilling()->asDefaultShipping());
         }
 
-        // log customer in
+        // create customer
         $customer = $builder->customerBuilder->build();
-        $customerFixture = new CustomerFixture($customer);
-        $customerFixture->login();
 
         if (empty($builder->cartBuilder)) {
             // init cart, add products
-            $builder->cartBuilder = CartBuilder::forCurrentSession();
+            $builder->cartBuilder = CartBuilder::forCustomer((int) $customer->getId());
             foreach ($products as $product) {
-                $qty = 1;
-                $builder->cartBuilder = $builder->cartBuilder->withSimpleProduct($product->getSku(), $qty);
+                $builder->cartBuilder = $builder->cartBuilder->withItem($product->getSku());
             }
         }
 
         // check out, place order
-        $checkout = CustomerCheckout::fromCart($builder->cartBuilder->build());
+        $checkout = CustomerCheckout::withCart($builder->cartBuilder->build());
         if ($builder->shippingMethod) {
-            $checkout = $checkout->withShippingMethodCode($builder->shippingMethod);
+            $checkout->submitShipping($builder->shippingMethod);
         }
 
         if ($builder->paymentMethod) {
-            $checkout = $checkout->withPaymentMethodCode($builder->paymentMethod);
+            $checkout->submitPayment($builder->paymentMethod);
         }
 
-        $order = $checkout->placeOrder();
-
-        $customerFixture->logout();
-
-        return $order;
+        return $checkout->placeOrder();
     }
 }

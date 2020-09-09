@@ -182,11 +182,11 @@ class CartBuilder
 
         if ($this->reservedOrderId) {
             $cart->setReservedOrderId($this->reservedOrderId);
-
-            // force items reload before save, otherwise they have no item ID
-            $cart->setItems([]);
-            $this->cartRepository->save($cart);
         }
+
+        // force items reload before save, otherwise they have no item ID
+        $cart->setItems([]);
+        $this->cartRepository->save($cart);
 
         return $cart;
     }

@@ -2,14 +2,16 @@
 
 namespace TddWizard\Fixtures\Sales;
 
-use Magento\Framework\Exception\LocalizedException;
 use Magento\Sales\Api\CreditmemoRepositoryInterface;
 use Magento\Sales\Api\Data\CreditmemoInterface;
 use Magento\Sales\Api\Data\OrderItemInterface;
 use Magento\TestFramework\Helper\Bootstrap;
 use PHPUnit\Framework\TestCase;
 use TddWizard\Fixtures\Catalog\ProductBuilder;
-use TddWizard\Fixtures\Checkout\CartBuilder;
+use TddWizard\Fixtures\CheckoutV2\CartBuilder;
+use TddWizard\Fixtures\CheckoutV2\CartFixturePool;
+use TddWizard\Fixtures\Customer\AddressBuilder;
+use TddWizard\Fixtures\Customer\CustomerBuilder;
 
 /**
  * @magentoAppIsolation enabled
@@ -18,9 +20,14 @@ use TddWizard\Fixtures\Checkout\CartBuilder;
 class CreditmemoBuilderTest extends TestCase
 {
     /**
-     * @var OrderFixture
+     * @var CartFixturePool
      */
-    private $orderFixture;
+    private $cartFixtures;
+
+    /**
+     * @var OrderFixturePool
+     */
+    private $orderFixtures;
 
     /**
      * @var CreditmemoRepositoryInterface
@@ -32,14 +39,14 @@ class CreditmemoBuilderTest extends TestCase
         parent::setUp();
 
         $this->creditmemoRepository = Bootstrap::getObjectManager()->create(CreditmemoRepositoryInterface::class);
+        $this->cartFixtures = new CartFixturePool();
+        $this->orderFixtures = new OrderFixturePool();
     }
 
-    /**
-     * @throws LocalizedException
-     */
     protected function tearDown(): void
     {
-        OrderFixtureRollback::create()->execute($this->orderFixture);
+        $this->cartFixtures->rollback();
+        $this->orderFixtures->rollback();
 
         parent::tearDown();
     }
@@ -54,7 +61,7 @@ class CreditmemoBuilderTest extends TestCase
     public function createCreditmemo()
     {
         $order = OrderBuilder::anOrder()->withPaymentMethod('checkmo')->build();
-        $this->orderFixture = new OrderFixture($order);
+        $this->orderFixtures->add($order);
 
         $refundFixture = new CreditmemoFixture(CreditmemoBuilder::forOrder($order)->build());
 
@@ -70,15 +77,18 @@ class CreditmemoBuilderTest extends TestCase
      */
     public function createPartialCreditmemos()
     {
+        // create customer
+        $customer = CustomerBuilder::aCustomer()
+            ->withAddresses(AddressBuilder::anAddress()->asDefaultShipping()->asDefaultBilling())
+            ->build();
+
         $order = OrderBuilder::anOrder()->withPaymentMethod('checkmo')->withProducts(
             ProductBuilder::aSimpleProduct()->withSku('foo'),
             ProductBuilder::aSimpleProduct()->withSku('bar')
         )->withCart(
-            CartBuilder::forCurrentSession()
-                ->withSimpleProduct('foo', 2)
-                ->withSimpleProduct('bar', 3)
+            CartBuilder::forCustomer((int) $customer->getId())->withItem('foo', 2)->withItem('bar', 3)
         )->build();
-        $this->orderFixture = new OrderFixture($order);
+        $this->orderFixtures->add($order);
 
         $orderItemIds = [];
         /** @var OrderItemInterface $orderItem */
