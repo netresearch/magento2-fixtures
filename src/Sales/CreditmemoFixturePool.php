@@ -7,7 +7,6 @@ use Magento\Sales\Api\Data\CreditmemoInterface;
 
 class CreditmemoFixturePool
 {
-
     /**
      * @var CreditmemoFixture[]
      */
@@ -38,5 +37,4 @@ class CreditmemoFixturePool
         }
         return $this->creditmemoFixtures[$key];
     }
-
 }

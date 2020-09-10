@@ -3,6 +3,9 @@ declare(strict_types=1);
 
 namespace TddWizard\Fixtures\Sales;
 
+use Magento\Catalog\Api\Data\ProductInterface;
+use Magento\Customer\Api\Data\CustomerInterface;
+use Magento\Quote\Api\Data\CartInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Model\Order;
 use TddWizard\Fixtures\Catalog\ProductBuilder;
@@ -17,19 +20,19 @@ use TddWizard\Fixtures\Customer\CustomerBuilder;
 class OrderBuilder
 {
     /**
-     * @var CartBuilder
+     * @var ProductInterface[]
      */
-    private $cartBuilder;
+    private $products;
 
     /**
-     * @var ProductBuilder[]
+     * @var CustomerInterface
      */
-    private $productBuilders;
+    private $customer;
 
     /**
-     * @var CustomerBuilder
+     * @var CartInterface
      */
-    private $customerBuilder;
+    private $cart;
 
     /**
      * @var string
@@ -50,26 +53,26 @@ class OrderBuilder
         return new static();
     }
 
-    public function withProducts(ProductBuilder ...$productBuilders): OrderBuilder
+    public function withProducts(ProductInterface ...$products): OrderBuilder
     {
         $builder = clone $this;
-        $builder->productBuilders = $productBuilders;
+        $builder->products = $products;
 
         return $builder;
     }
 
-    public function withCustomer(CustomerBuilder $customerBuilder): OrderBuilder
+    public function withCustomer(CustomerInterface $customer): OrderBuilder
     {
         $builder = clone $this;
-        $builder->customerBuilder = $customerBuilder;
+        $builder->customer = $customer;
 
         return $builder;
     }
 
-    public function withCart(CartBuilder $cartBuilder): OrderBuilder
+    public function withCart(CartInterface $cart): OrderBuilder
     {
         $builder = clone $this;
-        $builder->cartBuilder = $cartBuilder;
+        $builder->cart = $cart;
 
         return $builder;
     }
@@ -98,40 +101,32 @@ class OrderBuilder
     {
         $builder = clone $this;
 
-        if (empty($builder->productBuilders)) {
+        if (empty($builder->products)) {
             // init simple products
             for ($i = 0; $i < 3; $i++) {
-                $builder->productBuilders[] = ProductBuilder::aSimpleProduct();
+                $builder->products[] = ProductBuilder::aSimpleProduct()->build();
             }
         }
 
-        // create products
-        $products = array_map(
-            static function (ProductBuilder $productBuilder) {
-                return $productBuilder->build();
-            },
-            $builder->productBuilders
-        );
-
-        if (empty($builder->customerBuilder)) {
+        if (empty($builder->customer)) {
             // init customer
-            $builder->customerBuilder = CustomerBuilder::aCustomer()
-                ->withAddresses(AddressBuilder::anAddress()->asDefaultBilling()->asDefaultShipping());
+            $builder->customer = CustomerBuilder::aCustomer()
+                ->withAddresses(AddressBuilder::anAddress()->asDefaultBilling()->asDefaultShipping())
+                ->build();
         }
 
-        // create customer
-        $customer = $builder->customerBuilder->build();
-
-        if (empty($builder->cartBuilder)) {
+        if (empty($builder->cart)) {
             // init cart, add products
-            $builder->cartBuilder = CartBuilder::forCustomer((int) $customer->getId());
-            foreach ($products as $product) {
-                $builder->cartBuilder = $builder->cartBuilder->withItem($product->getSku());
+            $cartBuilder = CartBuilder::forCustomer((int) $builder->customer->getId());
+            foreach ($builder->products as $product) {
+                $cartBuilder = $cartBuilder->withItem($product->getSku());
             }
+
+            $builder->cart = $cartBuilder->build();
         }
 
         // check out, place order
-        $checkout = CustomerCheckout::withCart($builder->cartBuilder->build());
+        $checkout = CustomerCheckout::withCart($builder->cart);
         if ($builder->shippingMethod) {
             $checkout->submitShipping($builder->shippingMethod);
         }

@@ -15,6 +15,7 @@ use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Api\Data\PaymentInterfaceFactory;
 use Magento\Quote\Api\PaymentMethodManagementInterface;
 use Magento\Quote\Api\ShippingMethodManagementInterface;
+use Magento\Quote\Model\Quote;
 use Magento\Quote\Model\ResourceModel\Quote\Address\Rate\CollectionFactory;
 use Magento\Quote\Model\ShippingAddressManagementInterface;
 use Magento\Sales\Api\Data\OrderInterface;
@@ -24,7 +25,7 @@ use Magento\TestFramework\Helper\Bootstrap;
 class CustomerCheckout
 {
     /**
-     * @var CartInterface
+     * @var CartInterface|Quote
      */
     private $cart;
 

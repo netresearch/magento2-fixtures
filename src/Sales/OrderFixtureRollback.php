@@ -75,16 +75,7 @@ class OrderFixtureRollback
         $this->registry->register('isSecureArea', true);
 
         foreach ($orderFixtures as $orderFixture) {
-            $orderItems = $this->orderRepository->get($orderFixture->getId())->getItems();
-
             $this->orderRepository->deleteById($orderFixture->getId());
-            $this->customerRepository->deleteById($orderFixture->getCustomerId());
-            array_walk(
-                $orderItems,
-                function (OrderItemInterface $orderItem) {
-                    $this->productRepository->deleteById($orderItem->getSku());
-                }
-            );
         }
 
         $this->registry->unregister('isSecureArea');
